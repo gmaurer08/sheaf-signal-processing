@@ -4,7 +4,7 @@ import networkx as nx
 from sklearn.neighbors import NearestNeighbors
 
 class VDM:
-    def __init__(self, data, eps, eps_pca, k=30, gamma=0.9):
+    def __init__(self, data, eps, eps_pca, k=30, gamma=0.95):
         # Hyperparameters
         self.eps = eps
         self.eps_pca = eps_pca
@@ -244,7 +244,7 @@ class VDM:
         self.weight_matrix = weight_matrix_W
         return weight_matrix_W
     
-    # Function that computes the block matrices formed by the weighted alignment matrices and zero blocks (S): dN x dN
+    # Function that computes the block matrix formed by the weighted alignment matrices and zero blocks (S): dN x dN
     def get_alignment_block_matrix(self):
         '''
         Computes the block matrix S formed by zero blocks and the weighted alignment matrices
