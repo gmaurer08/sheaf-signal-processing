@@ -51,18 +51,23 @@ class VDM:
     ################################################################
     
     # Build a graph from the point cloud
-    def make_graph(self):
+    def make_graph(self, method='radius'):
         '''
         Function that builds a networkx graph from the input data using radius nearest neighbors
+        or k nearest neighbors (method must be 'radius' or 'knn')
         '''
         N = self.N
         G = nx.Graph() # Create the graph
         G.add_nodes_from(range(N))
         # Find the nearest neighbors of each point
-        # rnn = NearestNeighbors(metric='euclidean', radius=np.sqrt(self.eps), algorithm='auto')
-        # distances, indices = rnn.fit(self.data).radius_neighbors(self.data)
-        knn = NearestNeighbors(n_neighbors=self.k+1, algorithm='auto') # k+1 because the node itself is also counted here
-        distances, indices = knn.fit(self.data).kneighbors(self.data)
+        if method == 'radius':
+            rnn = NearestNeighbors(metric='euclidean', radius=np.sqrt(self.eps), algorithm='auto')
+            distances, indices = rnn.fit(self.data).radius_neighbors(self.data)
+        elif method == 'knn':
+            knn = NearestNeighbors(n_neighbors=self.k+1, algorithm='auto') # k+1 because the node itself is also counted here
+            distances, indices = knn.fit(self.data).kneighbors(self.data)
+        else:
+            raise ValueError("method must be 'radius' or 'knn'")
         # Add edges where the distance is less than sqrt(eps)
         for node_i in range(N):
             for idx_j, node_j in enumerate(indices[node_i]):
