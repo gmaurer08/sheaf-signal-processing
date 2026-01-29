@@ -119,9 +119,13 @@ class VDM:
         data = self.data
         N = self.N
         # Find local pca neighbors
-        pca_neighbors = self.find_pca_neighbors()
-        # Shifted pca neighbors (X_i): 3 x Ni matrices
-        shifted_pca_neighbors = [(pca_neighbors[i]-pca_neighbors[i].mean(axis=0)).transpose(1,0) for i in range(N)]   # in the paper it's "- data[i]"
+        try:
+            pca_neighbors = self.find_pca_neighbors()
+            # Shifted pca neighbors (X_i): 3 x Ni matrices
+            shifted_pca_neighbors = [(pca_neighbors[i]- data[i]).transpose(1,0) for i in range(N)]   #  OR  - pca_neighbors[i].mean(axis=0)
+        except ValueError:
+            print(f"No pca neighbors found for some points, consider increasing eps_pca.")
+            return None
         # Scaling matrices (D_i): Ni x Ni matrices, Ni = number of neighbors of point i
         scaling_matrices = [
             np.diag(
