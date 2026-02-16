@@ -220,11 +220,11 @@ class VDM:
             for j in graph.neighbors(i):
                 if j in alignment_matrices: # Make sure that O_ji = O_ij.T
                     if i in alignment_matrices[j]:
-                        alignment_matrices[i][j] = alignment_matrices[j][i].T
+                        alignment_matrices[int(i)][int(j)] = alignment_matrices[int(j)][int(i)].T
                 else: # Compute the singular value decomposition of O_i.T @ O_j
                     Oij = orthonormal_bases[i].T @ orthonormal_bases[j]
                     U, _, V = np.linalg.svd(Oij)
-                    alignment_matrices[i][j] = U @ V.T
+                    alignment_matrices[int(i)][int(j)] = U @ V.T
         self.alignment_matrices = alignment_matrices
         return alignment_matrices
     
