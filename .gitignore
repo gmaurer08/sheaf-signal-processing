@@ -209,3 +209,4 @@ __marimo__/
 # GRIB files
 *.grib
 *.grib2
+*.grib.5b7b6.idx
