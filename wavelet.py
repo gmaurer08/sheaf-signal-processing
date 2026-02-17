@@ -1,20 +1,12 @@
 import numpy as np
-import matplotlib.pyplot as plt
 import networkx as nx
 from sklearn.neighbors import NearestNeighbors
 from vdm import VDM
 from tqdm import tqdm
-import torch
-import torch.nn as nn
-import torch.optim as optim
-from torch.utils import data as Data
-import torch.nn.functional as F
-import torch.nn as nn
 import cvxpy as cp
 from sklearn.linear_model import OrthogonalMatchingPursuit
 
 SEED = 6111983
-torch.manual_seed(SEED)
 np.random.seed(SEED)
 
 class Wavelet:
@@ -119,10 +111,7 @@ class Wavelet:
         for i, scale in enumerate(scales):
             # Compute the spectral scaling coefficients, applying the kernel function
             spectral_scaling = self.g(self.eigvals * scale)
-            for j, shift in enumerate(shifts):
-                # Compute the wavelets
-                weights = np.multiply(spectral_scaling, self.eigvecs[shift])
-                wavelet_dict[:,i*num_shifts+j] = self.eigvecs @weights 
+            wavelet_dict[:,i*num_shifts:(i+1)*num_shifts] = self.eigvecs @ np.diag(spectral_scaling) @ self.eigvecs.T
         # Optional normalization
         if normalize:
             col_norms = np.linalg.norm(wavelet_dict, axis=0)
@@ -154,18 +143,29 @@ class Wavelet:
             wavelet_dict = wavelet_dict/col_norms
         return wavelet_dict
     
-    def sparse_signal(self,f,wav_dict):
+    def sparse_signal(self,f,wav_dict,method='OMP'):
         '''
         Function that computes the sparsest representation of a signal f
         f = signal
         wav_dict = dictionary of wavelets, optionally already implemented
+        method = 'OMP' (orthogonal matching pursuit) or 'CVXPY', with default 'OMP'
         Returns:
         sparse representation of f 
         '''
-        num_atoms = wav_dict.shape[1]
-        x = cp.Variable(num_atoms)
         # Solve LASSO, basis pursuit problem with convex optimization using CVXPY
-        problem = cp.Problem(cp.Minimize(cp.norm1(x)),[wav_dict@ x == f])
-        problem.solve(solver=cp.SCS, verbose=False)
-        sparse_signal = x.value
-        return sparse_signal
+        # (convex optimization, takes longer but is more precise)
+        if method=='CVXPY':
+            num_atoms = wav_dict.shape[1]
+            x = cp.Variable(num_atoms)
+            problem = cp.Problem(cp.Minimize(cp.norm1(x)),[wav_dict@ x == f])
+            problem.solve(solver=cp.SCS, verbose=False)
+            sparse_signal = x.value
+            return sparse_signal
+        # Solve LASSO, basis pursuit problem with convex optimization using OMP (Orthogonal Matching Pursuit)
+        if method=='OMP':
+            omp = OrthogonalMatchingPursuit()
+            omp.fit(wav_dict,f)
+            sparse_signal = omp.coef_
+            return sparse_signal
+        else:
+            raise ValueError("Method must be 'OMP' or 'CVXPY'")

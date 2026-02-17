@@ -74,7 +74,7 @@ class VDM:
                 if node_i!=node_j:
                     distance = distances[node_i][idx_j]
                     weight = self.Gauss(distance/np.sqrt(self.eps))
-                    G.add_edge(node_i, node_j, distance=distance, weight=weight)
+                    G.add_edge(int(node_i), int(node_j), distance=distance, weight=weight)
         return G
     
     # Ensure that the graph is built
