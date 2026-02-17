@@ -21,6 +21,10 @@ class CochainSample:
     X: np.ndarray
     covariance: np.ndarray
     X_GT: np.ndarray
+    points: np.ndarray
+    local_bases: list
+    V: int
+    d: int = 3
     
     def random_tangent_bundle_signals(
             self, 
@@ -70,5 +74,8 @@ class CochainSample:
         return CochainSample(
             X=f, 
             covariance=covariance, 
-            X_GT=f
+            X_GT=f,
+            points=self.points,
+            local_bases=self.local_bases,
+            V=self.V
             )

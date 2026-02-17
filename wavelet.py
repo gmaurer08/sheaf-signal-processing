@@ -59,7 +59,7 @@ class Wavelet:
     # Function that ensures the eigendecomposition is computed
     def _ensure_eig_laplacian(self):
         if self.eigvals is None or self.eigvecs is None:
-            self.get_eig_laplacian(self.L)
+            self.get_eig_laplacian()
 
     # Function that applies the wavelet operator to a node or edge
     def wavelet(self,m,scale,shift):
@@ -93,24 +93,24 @@ class Wavelet:
     
     # Function that builds an array of atoms for a given set of scales and shifts (wavelet dictionary)
     # The resulting dictionary will have size L.shape[0] x num_scales*num_shifts
-    def make_dictionary(self, scales, shifts, normalize=False):
+    def make_dictionary(self, scales, normalize=False):
         '''
         Function that creates a dictionary of wavelets for different scales and shifts
         Inputs:
         scales = list of scales
-        shifts = list of shifts
         normalize = boolean
         Returns:
         wavelet_dict = dictionary of wavelets
         '''
         self._ensure_eig_laplacian()
         num_scales = len(scales)
-        num_shifts = len(shifts)
+        num_shifts = self.L.shape[0]
         # Initialize the wavelet dictionary
         wavelet_dict = np.zeros((self.L.shape[0],num_scales*num_shifts))
         for i, scale in enumerate(scales):
             # Compute the spectral scaling coefficients, applying the kernel function
             spectral_scaling = self.g(self.eigvals * scale)
+            # Compute the wavelets for all shifts
             wavelet_dict[:,i*num_shifts:(i+1)*num_shifts] = self.eigvecs @ np.diag(spectral_scaling) @ self.eigvecs.T
         # Optional normalization
         if normalize:
