@@ -210,3 +210,13 @@ __marimo__/
 *.grib
 *.grib2
 *.grib.5b7b6.idx
+
+# Other
+*.csv
+*.npy
+*.parquet
+/scraper.ipynb
+# /builder.py
+/disclaimer.txt
+observations/
+topography/
