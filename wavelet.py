@@ -93,11 +93,12 @@ class Wavelet:
     
     # Function that builds an array of atoms for a given set of scales and shifts (wavelet dictionary)
     # The resulting dictionary will have size L.shape[0] x num_scales*num_shifts
-    def make_dictionary(self, scales, normalize=False):
+    def make_dictionary(self, scales, shifts, normalize=False):
         '''
         Function that creates a dictionary of wavelets for different scales and shifts
         Inputs:
         scales = list of scales
+        shifts = list of shifts
         normalize = boolean
         Returns:
         wavelet_dict = dictionary of wavelets
@@ -111,7 +112,10 @@ class Wavelet:
             # Compute the spectral scaling coefficients, applying the kernel function
             spectral_scaling = self.g(self.eigvals * scale)
             # Compute the wavelets for all shifts
-            wavelet_dict[:,i*num_shifts:(i+1)*num_shifts] = self.eigvecs @ np.diag(spectral_scaling) @ self.eigvecs.T
+            #wavelet_dict[:,i*num_shifts:(i+1)*num_shifts] = self.eigvecs @ np.diag(spectral_scaling) @ self.eigvecs.T
+            for j, shift in enumerate(shifts):
+                weights = np.multiply(spectral_scaling, self.eigvecs[shift])
+                wavelet_dict[:,i*num_shifts+j] = self.eigvecs @ weights
         # Optional normalization
         if normalize:
             col_norms = np.linalg.norm(wavelet_dict, axis=0)

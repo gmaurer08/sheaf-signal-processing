@@ -537,4 +537,9 @@ class VDM:
         block_matrix_S = self.alignment_block_matrix
         degree_matrix_dN_x_dN = self.get_kron_degree_matrix()
         conn_laplacian = np.linalg.inv(degree_matrix_dN_x_dN) @ block_matrix_S - np.eye(self.dim * self.N)
+        '''
+        W = self.get_weight_matrix()
+        D = self.get_degree_matrix()
+        conn_laplacian = np.linalg.inv(D) @ W - np.eye(self.N)
+        '''
         return conn_laplacian
