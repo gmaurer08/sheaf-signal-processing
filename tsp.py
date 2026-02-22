@@ -15,7 +15,7 @@ from utils import fibonacci_sphere, geodetic_to_ecef, project_to_tangent
 import warnings
 warnings.filterwarnings("ignore")
 
-SEED = 6111983
+SEED = 42
 np.random.seed(SEED)
 
 
@@ -167,7 +167,7 @@ class TSP(VDM):
         self._ensure_orthonormal_bases()
         O = self.orthonormal_bases
 
-        def kraichnan_r3(self, k, Z, n=100, sigma=1, U_bar=0):
+        def kraichnan_r3(self, k, Z, n=100, sigma=1, U_bar=0, SEED=42):
             '''
             Function that computes the a vector field for R^3
             k = precomputed normal random vectors (n x 3)
@@ -216,7 +216,7 @@ class TSP(VDM):
                             V=N
                             )
         # Saplming signals
-        sampled = sample.random_tangent_bundle_signals(Sigma=None,len_scale=len_scale, M=num_signals, seed=42)
+        sampled = sample.random_tangent_bundle_signals(Sigma=None,len_scale=len_scale, M=num_signals, seed=SEED)
         # Get the results
         X = sampled.X
         covariance = sampled.covariance
