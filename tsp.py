@@ -23,15 +23,32 @@ np.random.seed(SEED)
 class TSP(VDM):
     def __init__(self, data, eps, eps_pca, k, gamma=0.95):
         super().__init__(data, eps, eps_pca, k, gamma)
-        self.L_conn = None
-        self.L_sheaf = None
-        self.L_trivial = None
-        self.L_trivial_norm = None
+        self.laplacians = {
+            'Connection': None,
+            'Connection Normalized': None,
+            'Trivial': None,
+            'Trivial Normalized': None,
+            'Sheaf': None
+        }
+        self.laplacian_eigs = {
+            'Connection': None,
+            'Connection Normalized': None,
+            'Trivial': None,
+            'Trivial Normalized': None,
+            'Sheaf': None
+        }
+        self.wav_objects = {
+            'Connection': None,
+            'Connection Normalized': None,
+            'Trivial': None,
+            'Trivial Normalized': None,
+            'Sheaf': None
+        }
         self.dictionaries = None
-        self.wav_conn = None
-        self.wav_trivial = None
-        self.wav_trivial_norm = None
-        self.wav_sheaf = None
+
+    ################################################################
+    # Plotting + Helper Functions
+    ################################################################
 
     # Function that plots the points in R^3
     def plot_points(self,title='Point Cloud in R^3'):
@@ -59,10 +76,28 @@ class TSP(VDM):
         plt.title(title)
         plt.show()
 
+    # Kernel function g
+    def kernel(self,x):
+        '''
+        Function that computes the spectral decay kernel
+        The kernel is of the form g(x) = x * exp(-x)
+        satisfying the conditions g(0)=0 and g(x)->0 as x->+inf to serve as a bandpass filter
+        '''
+        return x * np.exp(-x)
+
+    ################################################################
+    # Laplacian Functions
+    ################################################################
+
     # Function that ensures the connection laplacian is computed
     def _ensure_connection_laplacian(self):
-        if self.L_conn is None:
-            self.L_conn = self.connection_laplacian()
+        if self.laplacians['Connection'] is None:
+            self.laplacians['Connection'] = self.connection_laplacian(normalize=False) # don't normalize
+
+    # Function that ensures the normalized connection laplacian is computed
+    def _ensure_norm_connection_laplacian(self):
+        if self.laplacians['Connection Normalized'] is None:
+            self.laplacians['Connection Normalized'] = self.connection_laplacian()
 
     # Function that computes the trivial laplacian
     def trivial_laplacian(self):
@@ -78,21 +113,21 @@ class TSP(VDM):
     
     # Function that ensures the trivial laplacian is computed
     def _ensure_trivial_laplacian(self):
-        if self.L_trivial is None:
-            self.L_trivial = self.trivial_laplacian()
+        if self.laplacians['Trivial'] is None:
+            self.laplacians['Trivial'] = self.trivial_laplacian()
     
     # Function that computes the normalized trivial laplacian
     def trivial_laplacian_norm(self):
         self._ensure_trivial_laplacian()
-        L_trivial = self.L_trivial
+        L_trivial = self.laplacians['Trivial']
         D_diag_sqrt = np.sqrt(np.diag(self.get_kron_degree_matrix()))
         L_trivial_norm = np.diag(1./D_diag_sqrt) @ L_trivial @ np.diag(D_diag_sqrt) # Normalized Kronecker Graph Laplacian
         return L_trivial_norm
     
     # Function that ensures the normalized trivial laplacian is computed
     def _ensure_trivial_laplacian_norm(self):
-        if self.L_trivial_norm is None:
-            self.L_trivial_norm = self.trivial_laplacian_norm()
+        if self.laplacians['Trivial Normalized'] is None:
+            self.laplacians['Trivial Normalized'] = self.trivial_laplacian_norm()
 
     # Function that computes the sheaf laplacian
     # Define edge orientation as follows: edge (i,j) has tail i and head j with i<j
@@ -132,25 +167,126 @@ class TSP(VDM):
     def sheaf_laplacian(self):
         delta = self.coboundary_map()
         L = delta.T @ delta
-        self.L_sheaf = L
+        self.laplacians['Sheaf'] = L
         return L
     
     def _ensure_sheaf_laplacian(self):
-        if self.L_sheaf is None:
-            self.L_sheaf = self.sheaf_laplacian()
+        if self.laplacians['Sheaf'] is None:
+            self.laplacians['Sheaf'] = self.sheaf_laplacian()
+
+    ################################################################
+    # Wavelets and dictionaries
+    ################################################################
+
+    # Function that ensures that the wavelet objects are created
+    def _ensure_wav_objects(self):
+        if None in self.wav_objects.values():
+            # Ensure the laplacians are built
+            self._ensure_connection_laplacian()
+            self._ensure_norm_connection_laplacian()
+            self._ensure_trivial_laplacian()
+            self._ensure_trivial_laplacian_norm()
+            self._ensure_sheaf_laplacian()
+
+            # Create the wavelet objects
+            wav_conn = Wavelet(-self.laplacians['Connection'])
+            wav_conn_norm = Wavelet(-self.laplacians['Connection Normalized'])
+            wav_trivial = Wavelet(self.laplacians['Trivial'])
+            wav_trivial_norm = Wavelet(self.laplacians['Trivial Normalized'])
+            wav_sheaf = Wavelet(self.laplacians['Sheaf'])
+
+            # Store the wavelet objects
+            self.wav_objects['Connection'] = wav_conn
+            self.wav_objects['Connection Normalized'] = wav_conn_norm
+            self.wav_objects['Trivial'] = wav_trivial
+            self.wav_objects['Trivial Normalized'] = wav_trivial_norm
+            self.wav_objects['Sheaf'] = wav_sheaf
+
+    # Function that generates the dictionaries
+    def make_dictionaries(self, scales=[2**(j-2) for j in range(7)]):
+        
+        # Ensure the wavelet objects are created
+        self._ensure_wav_objects()
+        wav_conn = self.wav_objects['Connection']
+        wav_conn_norm = self.wav_objects['Connection Normalized']
+        wav_trivial = self.wav_objects['Trivial']
+        wav_trivial_norm = self.wav_objects['Trivial Normalized']
+        wav_sheaf = self.wav_objects['Sheaf']
+        
+        # Build the dictionaries
+        dict_conn = wav_conn.make_dictionary(scales)
+        dict_conn_norm = wav_conn_norm.make_dictionary(scales)
+        dict_trivial = wav_trivial.make_dictionary(scales)
+        dict_trivial_norm = wav_trivial_norm.make_dictionary(scales)
+        dict_sheaf = wav_sheaf.make_dictionary(scales)
+
+        dictionaries = {
+            'Connection': dict_conn,
+            'Connection Normalized': dict_conn_norm,
+            'Trivial': dict_trivial,
+            'Trivial Normalized': dict_trivial_norm,
+            'Sheaf': dict_sheaf
+        }
+
+        self.dictionaries = dictionaries
+
+        return dictionaries
+    
+    def _ensure_dictionaries(self):
+        if self.dictionaries is None:
+            self.make_dictionaries()
+
+
+    # Function that ensures that the eigendecompositions of the laplacians are computed
+    def get_all_eig_laplacians(self):
+        self._ensure_wav_objects()
+        wav_conn = self.wav_objects['Connection']
+        wav_conn_norm = self.wav_objects['Connection Normalized']
+        wav_trivial = self.wav_objects['Trivial']
+        wav_trivial_norm = self.wav_objects['Trivial Normalized']
+        wav_sheaf = self.wav_objects['Sheaf']
+
+        # Compute laplacian eigendecompositions
+        wav_conn_norm.get_eig_laplacian()
+        wav_trivial.get_eig_laplacian()
+        wav_trivial_norm.get_eig_laplacian()
+        wav_sheaf.get_eig_laplacian()
+
+        # Store the eigendecompositions
+        self.laplacian_eigs = {
+            'Connection': (wav_conn.eigvals, wav_conn.eigvecs),
+            'Connection Normalized': (wav_conn_norm.eigvals, wav_conn_norm.eigvecs),
+            'Trivial': (wav_trivial.eigvals, wav_trivial.eigvecs),
+            'Trivial Normalized': (wav_trivial_norm.eigvals, wav_trivial_norm.eigvecs),
+            'Sheaf': (wav_sheaf.eigvals, wav_sheaf.eigvecs)
+        }
+        return self.laplacian_eigs
+
+    def _ensure_all_laplacians(self):
+        self._ensure_connection_laplacian()
+        self._ensure_norm_connection_laplacian()
+        self._ensure_trivial_laplacian()
+        self._ensure_trivial_laplacian_norm()
+        self._ensure_sheaf_laplacian()
+
+    def _ensure_all_eig_laplacians(self):
+        if None in self.laplacian_eigs.values():
+            self.get_all_eig_laplacians()
+
+    ################################################################
+    # Signals
+    ################################################################
 
     # Function that generates that generates vector fields with kraichnan and samples from them
-    def generate_kraichnan_signals(self, num_signals=500, M=100, n=100, sigma=1, U_bar=0, Sigma=None, len_scale=10, SEED=6111983):
+    def generate_kraichnan_signals(self, laplacian, num_signals=500, M=100, Sigma=None, len_scale=10, SEED=42):
         '''
         Function that generates vector fields with kraichnan and samples from them
         Inputs:
+        laplacian = string that specifies the laplacian to compute the vector field for,
+                    possible values: 'Connection Normalized', 'Trivial', 'Trivial Normalized', 'Sheaf'
         num_signals = number of signals to generate
         M = number of Monte Carlo samples in kraichnan
         n = number of waves in kraichnan
-        sigma = strength (kraichnan)
-        U_bar = mean flow
-        Sigma = covariance of vector components in R^3 (sampler)
-        len_scale = length scale
         SEED = random seed
         Returns:
         X = samples
@@ -159,41 +295,34 @@ class TSP(VDM):
         '''
 
         # Monte Carlo samples
-        M = M
-        N = self.data.shape[0]
-        X = np.zeros((2*N, M)) 
+        M = M # number of samples
+        N = self.data.shape[0] # number of nodes
+        X = np.zeros((2*N, M)) # initialize matrix to store samples of the vector field
         rng = np.random.default_rng(SEED) # random number generator
+
+        # Get laplacian eigendecompositions
+        self._ensure_wav_objects()
+        self._ensure_all_eig_laplacians()
+
+        def kraichnan_r3(laplacian, alpha):
+            '''
+            Function that computes a vector field for R^3
+            laplacian = string that specifies the laplacian to compute the vector field for,
+                        possible values: 'Connection Normalized', 'Trivial', 'Trivial Normalized', 'Sheaf'
+            alpha = vector of length N with coefficients sampled from a normal distribution
+            This function assumes that laplacian eigendecompositions have been computed on the outside
+            and are now stored in self.laplacian_eigs
+            '''
+            eigvals, eigvecs = self.laplacian_eigs[laplacian]
+            U = eigvecs @ np.multiply(self.kernel(eigvals), alpha)
+            return U
 
         self._ensure_orthonormal_bases()
         O = self.orthonormal_bases
 
-        def kraichnan_r3(self, k, Z, n=100, sigma=1, U_bar=0, SEED=42):
-            '''
-            Function that computes the a vector field for R^3
-            k = precomputed normal random vectors (n x 3)
-            Z = precomputed normal random numbers (n x 1)
-            n = number of waves
-            sigma = strength
-            U_bar = mean flow
-            SEED = random seed
-            '''
-            x = self.data
-            # Define the field
-            e1 = np.array([1, 0, 0])
-            mult_factor = np.sqrt(sigma**2 / n)
-            U = np.tile(U_bar*e1, (len(x),1)).astype(np.float64)
-            for i in range(n):
-                projector = e1 - (k[i]*k[i][0]) / np.dot(k[i], k[i])
-                phase = x @ k[i] # N
-                wave = Z[i] * np.cos(phase) + np.sin(phase) # N
-                U -= mult_factor * wave[:,None] * projector[None,:]  # broadcast
-            return U
-
         for m in range(M):
             # Compute normal random vectors k_i and random scalars z_i
-            k = rng.normal(size=(n,3))
-            Z = rng.normal(size=n)
-            U = kraichnan_r3(self.data,k,Z,n=n, sigma=sigma, U_bar=U_bar) # Field sample
+            U = kraichnan_r3(laplacian, rng.normal(size=self.laplacians[laplacian].shape[0])) # Field sample
             for i in range(N):
                 X[2*i : 2*i+2, m] = O[i].T @ U[i] # Projection onto the orthonormal basis
         
@@ -223,86 +352,50 @@ class TSP(VDM):
         X_GT = sampled.X_GT
 
         return X, covariance, X_GT
-    
-    # Function that ensures that the wavelet objects are created
-    def _ensure_wav_objects(self):
-        if self.wav_conn is None or self.wav_trivial is None or self.wav_trivial_norm is None or self.wav_sheaf is None:
-            # Ensure the laplacians are built
-            self._ensure_connection_laplacian()
-            self._ensure_trivial_laplacian()
-            self._ensure_trivial_laplacian_norm()
-            self._ensure_sheaf_laplacian()
 
-            # Create the wavelet objects
-            wav_conn = Wavelet(-self.L_conn)
-            wav_trivial = Wavelet(self.L_trivial)
-            wav_trivial_norm = Wavelet(self.L_trivial_norm)
-            wav_sheaf = Wavelet(self.L_sheaf)
 
-            self.wav_conn = wav_conn
-            self.wav_trivial = wav_trivial
-            self.wav_trivial_norm = wav_trivial_norm
-            self.wav_sheaf = wav_sheaf
-
-    # Function that generates the dictionaries
-    def make_dictionaries(self, scales=[2**(j-2) for j in range(7)]):
-        
-        self._ensure_wav_objects()
-        wav_conn = self.wav_conn
-        wav_trivial = self.wav_trivial
-        wav_trivial_norm = self.wav_trivial_norm
-        wav_sheaf = self.wav_sheaf
-        
-        # Build the dictionaries
-        dict_conn = wav_conn.make_dictionary(scales)
-        dict_trivial = wav_trivial.make_dictionary(scales)
-        dict_trivial_norm = wav_trivial_norm.make_dictionary(scales)
-        dict_sheaf = wav_sheaf.make_dictionary(scales)
-
-        dictionaries = {
-            'Connection': dict_conn,
-            'Trivial': dict_trivial,
-            'Trivial Normalized': dict_trivial_norm,
-            'Sheaf': dict_sheaf
-        }
-
-        self.dictionaries = dictionaries
-
-        return dictionaries
-    
-    def _ensure_dictionaries(self):
-        if self.dictionaries is None:
-            self.make_dictionaries
-
+    # Apply the kraichan function to all laplacians
+    def kraichnan_for_all_laplacians(self, num_signals=500, M=100, Sigma=None, len_scale=10, SEED=42):
+        self._ensure_all_laplacians
+        kraichnan_signals = {}
+        for laplacian in self.laplacians:
+            kraichnan_signals[laplacian] = self.generate_kraichnan_signals(laplacian, num_signals=num_signals, M=M, Sigma=Sigma, len_scale=len_scale, SEED=SEED)
+        return kraichnan_signals
 
     def sparsify_signals(self, X):
 
         # Find the sparse signal representations
         sparse_signals_conn = []
+        sparse_signals_conn_norm = []
         sparse_signals_trivial = []
         sparse_signals_trivial_norm = []
         sparse_signals_sheaf = []
 
+        self._ensure_all_laplacians()
         self._ensure_wav_objects()
-        wav_conn = self.wav_conn
-        wav_trivial = self.wav_trivial
-        wav_trivial_norm = self.wav_trivial_norm
-        wav_sheaf = self.wav_sheaf
+        wav_conn = self.wav_objects['Connection']
+        wav_conn_norm = self.wav_objects['Connection Normalized']
+        wav_trivial = self.wav_objects['Trivial']
+        wav_trivial_norm = self.wav_objects['Trivial Normalized']
+        wav_sheaf = self.wav_objects['Sheaf']
 
         self._ensure_dictionaries()
         dict_conn = self.dictionaries['Connection']
+        dict_conn_norm = self.dictionaries['Connection Normalized']
         dict_trivial = self.dictionaries['Trivial']
         dict_trivial_norm = self.dictionaries['Trivial Normalized']
         dict_sheaf = self.dictionaries['Sheaf']
 
         for k in tqdm(range(X.shape[1])):
             sparse_signals_conn.append(wav_conn.sparse_signal(X[:,k], dict_conn))
+            sparse_signals_conn_norm.append(wav_conn_norm.sparse_signal(X[:,k], dict_conn_norm))
             sparse_signals_trivial.append(wav_trivial.sparse_signal(X[:,k], dict_trivial))
             sparse_signals_trivial_norm.append(wav_trivial_norm.sparse_signal(X[:,k], dict_trivial_norm))
             sparse_signals_sheaf.append(wav_sheaf.sparse_signal(X[:,k], dict_sheaf))
 
         return {
             'Connection': sparse_signals_conn,
+            'Connection Normalized': sparse_signals_conn_norm,
             'Trivial': sparse_signals_trivial,
             'Trivial Normalized': sparse_signals_trivial_norm,
             'Sheaf': sparse_signals_sheaf
@@ -312,27 +405,31 @@ class TSP(VDM):
 
         self._ensure_dictionaries()
         dict_conn = self.dictionaries['Connection']
+        dict_conn_norm = self.dictionaries['Connection Normalized']
         dict_trivial = self.dictionaries['Trivial']
         dict_trivial_norm = self.dictionaries['Trivial Normalized']
         dict_sheaf = self.dictionaries['Sheaf']
 
         # Compute the sparsity of the signal representations
         sparsity_conn = []
+        sparsity_conn_norm = []
         sparsity_trivial = []
         sparsity_trivial_norm = []
         sparsity_sheaf = []
 
         try:
-            for k in range(len(sparse_signals['Connection'])):
+            for k in range(len(sparse_signals['Connection Normalized'])):
                 sparsity_conn.append(np.sum(np.abs(sparse_signals['Connection'][k])>0) / dict_conn.shape[1] * 100)
+                sparsity_conn_norm.append(np.sum(np.abs(sparse_signals['Connection Normalized'][k])>0) / dict_conn_norm.shape[1] * 100)
                 sparsity_trivial.append(np.sum(np.abs(sparse_signals['Trivial'][k])>0) / dict_trivial.shape[1] * 100)
                 sparsity_trivial_norm.append(np.sum(np.abs(sparse_signals['Trivial Normalized'][k])>0) / dict_trivial_norm.shape[1] * 100)
                 sparsity_sheaf.append(np.sum(np.abs(sparse_signals['Sheaf'][k])>0) / dict_sheaf.shape[1] * 100)
         except:
-            print("The input must be a dictionary 'sparse_signals' with keys 'Connection', 'Trivial', 'Trivial Normalized', 'Sheaf'.")
+            print("The input must be a dictionary 'sparse_signals' with keys 'Connection', 'Connection Normalized', 'Trivial', 'Trivial Normalized', 'Sheaf'.")
         
         return {
             'Connection': sparsity_conn,
+            'Connection Normalized': sparsity_conn_norm,
             'Trivial': sparsity_trivial,
             'Trivial Normalized': sparsity_trivial_norm,
             'Sheaf': sparsity_sheaf
@@ -346,37 +443,42 @@ class TSP(VDM):
 
         self._ensure_dictionaries()
         dict_conn = self.dictionaries['Connection']
+        dict_conn_norm = self.dictionaries['Connection Normalized']
         dict_trivial = self.dictionaries['Trivial']
         dict_trivial_norm = self.dictionaries['Trivial Normalized']
         dict_sheaf = self.dictionaries['Sheaf']
 
         # Compute the NMSE of the sparse signal represntations
         nmse_conn_cube = []
+        nmse_conn_norm_cube = []
         nmse_trivial_cube = []
         nmse_trivial_norm_cube = []
         nmse_sheaf_cube = []
         
         try: 
-            for k in range(len(sparse_signals['Connection'])):
+            for k in range(len(sparse_signals['Connection Normalized'])):
                 nmse_conn_cube.append(self.NMSE(X_GT[:,k], dict_conn @sparse_signals['Connection'][k]))
+                nmse_conn_norm_cube.append(self.NMSE(X_GT[:,k], dict_conn_norm @sparse_signals['Connection Normalized'][k]))
                 nmse_trivial_cube.append(self.NMSE(X_GT[:,k], dict_trivial @sparse_signals['Trivial'][k]))
                 nmse_trivial_norm_cube.append(self.NMSE(X_GT[:,k], dict_trivial_norm @sparse_signals['Trivial Normalized'][k]))
                 nmse_sheaf_cube.append(self.NMSE(X_GT[:,k], dict_sheaf @sparse_signals['Sheaf'][k]))
             
             return {
                 'Connection': nmse_conn_cube,
+                'Connection Normalized': nmse_conn_norm_cube,
                 'Trivial': nmse_trivial_cube,
                 'Trivial Normalized': nmse_trivial_norm_cube,
                 'Sheaf': nmse_sheaf_cube
             }
         except:
             print("The 1st input must be a matrix 'X_GT' with ground truth signals.")
-            print("The 2nd input must be a dictionary 'sparse_signals' with keys 'Connection', 'Trivial', 'Trivial Normalized', 'Sheaf'.")
+            print("The 2nd input must be a dictionary 'sparse_signals' with keys 'Connection Normalized', 'Trivial', 'Trivial Normalized', 'Sheaf'.")
 
 
     # Function that plots all the NMSE densities of all the laplacians
     def plot_nmse(self,nmse):
         sns.kdeplot(nmse['Connection'], label='Connection Laplacian')
+        sns.kdeplot(nmse['Connection Normalized'], label='Normalized Connection Laplacian')
         sns.kdeplot(nmse['Trivial'], label='Trivial Laplacian')
         sns.kdeplot(nmse['Trivial Normalized'], label='Normalized Trivial Laplacian')
         sns.kdeplot(nmse['Sheaf'], label='Sheaf Laplacian')

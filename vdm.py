@@ -527,19 +527,20 @@ class VDM:
         return vdm_dist/np.sqrt(degrees[i]*degrees[j])
     
     # Approximates the connection laplacian
-    def connection_laplacian(self):
+    def connection_laplacian(self, normalize=True):
         '''
-        Function that approximates the connection laplacian of the graph by computing
-        D^-1 @ S - I, where D is the kronecker degree matrix D, S the alignment block matrix and I the identity matrix dN x dN
+        Function that approximates the connection laplacian of the graph, computing
+        D^-1 @ S - I if normalize is True, and S - D otherwise,
+        where D is the kronecker degree matrix D, S the alignment block matrix and I the identity matrix dN x dN
         '''
         self._ensure_alignment_block_matrix()
         self._ensure_dim()
+        # Compute S and D
         block_matrix_S = self.alignment_block_matrix
         degree_matrix_dN_x_dN = self.get_kron_degree_matrix()
-        conn_laplacian = np.linalg.inv(degree_matrix_dN_x_dN) @ block_matrix_S - np.eye(self.dim * self.N)
-        '''
-        W = self.get_weight_matrix()
-        D = self.get_degree_matrix()
-        conn_laplacian = np.linalg.inv(D) @ W - np.eye(self.N)
-        '''
+        # Compute the connection laplacian
+        if normalize:
+            conn_laplacian = np.linalg.inv(degree_matrix_dN_x_dN) @ block_matrix_S - np.eye(self.dim * self.N)
+        else:
+            conn_laplacian = block_matrix_S - degree_matrix_dN_x_dN
         return conn_laplacian

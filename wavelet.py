@@ -6,7 +6,7 @@ from tqdm import tqdm
 import cvxpy as cp
 from sklearn.linear_model import OrthogonalMatchingPursuit
 
-SEED = 6111983
+SEED = 42
 np.random.seed(SEED)
 
 class Wavelet:
