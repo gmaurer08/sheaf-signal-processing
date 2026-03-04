@@ -314,6 +314,9 @@ class TSP(VDM):
             and are now stored in self.laplacian_eigs
             '''
             eigvals, eigvecs = self.laplacian_eigs[laplacian]
+            #print(f"eigvecs shape: {eigvecs.shape}")
+            #print(f"eigvals shape: {eigvals.shape}")
+            #print(f"alpha shape: {alpha.shape}")
             U = eigvecs @ np.multiply(self.kernel(eigvals), alpha)
             return U
 
@@ -323,8 +326,17 @@ class TSP(VDM):
         for m in range(M):
             # Compute normal random vectors k_i and random scalars z_i
             U = kraichnan_r3(laplacian, rng.normal(size=self.laplacians[laplacian].shape[0])) # Field sample
+            #if m==0:
+            #    print("U shape:",U.shape)
+
             for i in range(N):
-                X[2*i : 2*i+2, m] = O[i].T @ U[i] # Projection onto the orthonormal basis
+                #if i==0:
+                #    print("O[i] shape:",O[i].shape)
+                #    print("O[i] @ U[0:2] shape:",O[i] @ U[0:2].shape)
+                X[2*i : 2*i+2, m] =  U[2*i:2*i+2]  # O[i].T @ U[2*i:2*i+2] # Projection onto the orthonormal basis
+        
+        #print(f"{laplacian} laplacian shape: ", self.laplacians[laplacian].shape)
+        #print("X shape:",X.shape)
         
         # Function that computes the empirical covariance
         def empirical_covariance(X):
