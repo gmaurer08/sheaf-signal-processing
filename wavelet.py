@@ -17,19 +17,19 @@ class Wavelet:
         self.eigvecs = None
 
         # kernel parameters (default values)
-        self.k = 1
+        self.h = 1
         self.t = 1
         self.p = 1
     
     # Kernel parameter modification
-    def set_kernel_parameters(self,k,t,p):
-        if k < 0:
-            raise ValueError("k must be non-negative")
+    def set_kernel_parameters(self,h,t,p):
+        if h < 0:
+            raise ValueError("h must be non-negative")
         if t < 0:
             raise ValueError("t must be non-negative")
         if p < 0:
             raise ValueError("p must be non-negative")
-        self.k = k
+        self.h = h
         self.t = t
         self.p = p
     
@@ -37,10 +37,10 @@ class Wavelet:
     def g(self,x):
         '''
         Function that computes the parametric kernel g
-        The kernel is of the form g(x) = x^k * exp(-t * x^p)
+        The kernel is of the form g(x) = x^h * exp(-t * x^p)
         satisfying the conditions g(0)=0 and g(x)->0 as x->+inf to serve as a bandpass filter
         '''
-        return x**self.k * np.exp(-self.t * x**self.p)
+        return x**self.h * np.exp(-self.t * x**self.p)
 
     def get_eig_laplacian(self):
         '''

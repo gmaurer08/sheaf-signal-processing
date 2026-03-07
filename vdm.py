@@ -40,7 +40,7 @@ class VDM:
         return np.exp(-u**2) * (u>=0) * (u<=1)
     
     # Epanechnikov kernel
-    def K(self,u):
+    def kernel(self,u):
         '''
         Function that computes the Epanechnikov kernel
         '''
@@ -129,7 +129,7 @@ class VDM:
         # Scaling matrices (D_i): Ni x Ni matrices, Ni = number of neighbors of point i
         scaling_matrices = [
             np.diag(
-                [np.sqrt(self.K(np.linalg.norm(shifted_pca_neighbors[i][:,j])/ (np.sqrt(self.eps_pca))))
+                [np.sqrt(self.kernel(np.linalg.norm(shifted_pca_neighbors[i][:,j])/ (np.sqrt(self.eps_pca))))
                 for j in range(shifted_pca_neighbors[i].shape[1])]
             )
             for i in range(N)
@@ -526,11 +526,14 @@ class VDM:
         degrees = self.get_degree_vector()
         return vdm_dist/np.sqrt(degrees[i]*degrees[j])
     
-    # Approximates the connection laplacian
-    def connection_laplacian(self, normalize=True):
+    ################################################################
+    # Laplacians
+    ################################################################    
+    
+    # Function that approximates the normalized connection laplacian
+    def connection_laplacian_norm(self):
         '''
-        Function that approximates the connection laplacian of the graph, computing
-        D^-1 @ S - I if normalize is True, and S - D otherwise,
+        Function that approximates the connection laplacian of the graph, computing D^-1 @ S - I,
         where D is the kronecker degree matrix D, S the alignment block matrix and I the identity matrix dN x dN
         '''
         self._ensure_alignment_block_matrix()
@@ -539,8 +542,81 @@ class VDM:
         block_matrix_S = self.alignment_block_matrix
         degree_matrix_dN_x_dN = self.get_kron_degree_matrix()
         # Compute the connection laplacian
-        if normalize:
-            conn_laplacian = np.linalg.inv(degree_matrix_dN_x_dN) @ block_matrix_S - np.eye(self.dim * self.N)
-        else:
-            conn_laplacian = block_matrix_S - degree_matrix_dN_x_dN
+        conn_laplacian = np.linalg.inv(degree_matrix_dN_x_dN) @ block_matrix_S - np.eye(self.dim * self.N)
         return conn_laplacian
+    
+    # Function that approximates the connection laplacian
+    def connection_laplacian(self):
+        '''
+        Function that approximates the connection laplacian of the graph, computing S - D,
+        where D is the kronecker degree matrix D, S the alignment block matrix and I the identity matrix dN x dN
+        '''
+        self._ensure_alignment_block_matrix()
+        self._ensure_dim()
+        # Compute S and D
+        block_matrix_S = self.alignment_block_matrix
+        degree_matrix_dN_x_dN = self.get_kron_degree_matrix()
+        # Compute the connection laplacian
+        conn_laplacian = block_matrix_S - degree_matrix_dN_x_dN
+        return conn_laplacian
+    
+    # Function that computes the trivial laplacian
+    def trivial_laplacian(self):
+        self._ensure_dim()
+        W = self.get_weight_matrix() # Weight matrix
+        d = self.get_degree_vector() # degree vector
+        d_sqrt = np.sqrt(d)
+        D = self.get_kron_degree_matrix()
+        D_diag= np.diag(D)
+        D_diag_sqrt = np.sqrt(D_diag)
+        L_trivial = np.kron(np.diag(d) - W, np.eye(self.dim)) # Kronecker Graph Laplacian
+        return L_trivial
+
+    # Function that computes the normalized trivial laplacian
+    def trivial_laplacian_norm(self):
+        self._ensure_trivial_laplacian()
+        L_trivial = self.laplacians['Trivial']
+        D_diag_sqrt = np.sqrt(np.diag(self.get_kron_degree_matrix()))
+        L_trivial_norm = np.diag(1./D_diag_sqrt) @ L_trivial @ np.diag(D_diag_sqrt) # Normalized Kronecker Graph Laplacian
+        return L_trivial_norm
+    
+    # Function that computes the sheaf laplacian
+    # Define edge orientation as follows: edge (i,j) has tail i and head j with i<j
+    def coboundary_map(self):
+        '''
+        Function that builds the coboundary map of a sheaf given a graph G and O dictionary of alignment matrices Oij
+        Assumption: all restriction maps (alignment matrices) have the same dimension dxd
+        Inputs:
+        G = graph
+        O = dictionary of alignment matrices/ restriction maps (O[i][j] is the restriction map from node i to edge (i,j))
+        d = dimension of the matrices
+        Returns:
+        delta = coboundary map
+        '''
+        self._ensure_graph()
+        self._ensure_dim()
+        self._ensure_alignment_matrices()
+        G = self.graph
+        O = self.alignment_matrices
+        d = self.dim
+        num_edges = G.number_of_edges()
+        num_nodes = G.number_of_nodes()
+        delta = np.zeros((num_edges*d,num_nodes*d))
+        for edge_idx, edge in enumerate(G.edges()):
+            if edge[0]<edge[1]:
+                i = int(edge[0])
+                j = int(edge[1])
+            else:
+                i = int(edge[1])
+                j = int(edge[0])
+            # Use the orthonormal bases as restriction maps
+            delta[edge_idx*d:(edge_idx+1)*d, i*d:(i+1)*d] = O[i][j] * G.get_edge_data(i,j)['weight']  # multiply by edge weight
+            delta[edge_idx*d:(edge_idx+1)*d, j*d:(j+1)*d] = - O[j][i] * G.get_edge_data(j,i)['weight']
+        return delta
+    
+    # Function that computes the sheaf laplacian
+    def sheaf_laplacian(self):
+        delta = self.coboundary_map()
+        L = delta.T @ delta
+        self.laplacians['Sheaf'] = L
+        return L
