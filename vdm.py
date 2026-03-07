@@ -574,8 +574,7 @@ class VDM:
 
     # Function that computes the normalized trivial laplacian
     def trivial_laplacian_norm(self):
-        self._ensure_trivial_laplacian()
-        L_trivial = self.laplacians['Trivial']
+        L_trivial = self.trivial_laplacian()
         D_diag_sqrt = np.sqrt(np.diag(self.get_kron_degree_matrix()))
         L_trivial_norm = np.diag(1./D_diag_sqrt) @ L_trivial @ np.diag(D_diag_sqrt) # Normalized Kronecker Graph Laplacian
         return L_trivial_norm
@@ -618,5 +617,4 @@ class VDM:
     def sheaf_laplacian(self):
         delta = self.coboundary_map()
         L = delta.T @ delta
-        self.laplacians['Sheaf'] = L
         return L
