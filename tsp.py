@@ -256,3 +256,233 @@ class TSP(VDM):
         for k in range(num_signals):
             nmse[k] = self.NMSE(X_GT[:,k], dictionary @ sparse_signals[:,k])
         return nmse
+    
+
+
+def signal_compression_exp1(point_cloud, hyperparameters):
+    ''' 
+    Function that takes in input a point cloud and a dictionary of hyperparameters and performs signal compression experiment 1 on the data
+    Returns:
+    - sparsity_results
+    - nmse_results
+    '''
+    # Initialize result dictionaries
+    sparsity_results = defaultdict(dict)
+    nmse_results = defaultdict(dict)
+    # Hyperparameters
+    num_scales = hyperparameters['num_scales']
+    laplacians = hyperparameters['laplacians']
+    num_signals = hyperparameters['num_signals']
+    eps = hyperparameters['eps']
+    eps_pca = hyperparameters['eps_pca']
+    k = hyperparameters['k']
+    gamma = hyperparameters['gamma']
+
+    for laplacian in laplacians:
+
+        # Create TSP (topological signal processing) object
+        Tsp = TSP(point_cloud, eps=eps, eps_pca=eps_pca, k=k, laplacian_code=laplacian, gamma=gamma)
+
+        signals = None
+
+        for num_scal in num_scales[::-1]:
+            # Create dictionary
+            dictionary = Tsp.create_dictionary(scales=[2**(j-num_scal//2) for j in range(num_scal)])
+
+            if num_scal == num_scales[-1]:
+                # Generate signals for the corresponding laplacian and dictionary
+                signals = Tsp.generate_random_lc_signals(dictionary, num_signals=num_signals)
+
+            # Sparsify signals
+            sparse_signals = Tsp.sparsify_signals(signals, dictionary)
+
+            # Compute sparsity
+            sparsity =  Tsp.compute_sparsity(sparse_signals)
+            
+            # Compute NMSE
+            nmse = Tsp.compute_NMSE(signals, sparse_signals, dictionary)
+
+            # Add sparsity and NMSE to the dictionaries
+            sparsity_results[laplacian][num_scal] = sparsity
+            nmse_results[laplacian][num_scal] = nmse
+        
+    return sparsity_results, nmse_results
+
+
+
+def signal_compression_exp2(point_cloud, hyperparameters):
+    '''
+    Function that takes in input a point cloud and a dictionary of hyperparameters and performs signal compression experiment 3 on the data
+    Returns:
+    - sparsity_results
+    - nmse_results
+    '''
+    # Initialize result dictionaries
+    sparsity_results = defaultdict(dict)
+    nmse_results = defaultdict(dict)
+
+    # Hyperparameters
+    num_scales = hyperparameters['num_scales']
+    laplacians = hyperparameters['laplacians']
+    num_signals = hyperparameters['num_signals']
+    eps = hyperparameters['eps']
+    eps_pca = hyperparameters['eps_pca']
+    k = hyperparameters['k']
+    gamma = hyperparameters['gamma']
+    SEED = hyperparameters['SEED']
+    sigma = 3
+
+    # Signals
+    np.random.seed(SEED)
+    signals = np.random.normal(scale=sigma, size=(2*point_cloud.shape[0],num_signals)) # signal dimension = manifold_dim * num_points
+
+    for laplacian in laplacians:
+
+        # Create TSP (topological signal processing) object
+        Tsp = TSP(point_cloud, eps=eps, eps_pca=eps_pca, k=k, laplacian_code=laplacian, gamma=gamma)
+
+        for num_scal in num_scales[::-1]:
+            # Create dictionary
+            dictionary = Tsp.create_dictionary(scales=[2**(j-num_scal//2) for j in range(num_scal)])
+
+            # Sparsify signals
+            sparse_signals = Tsp.sparsify_signals(signals, dictionary)
+
+            # Compute sparsity
+            sparsity =  Tsp.compute_sparsity(sparse_signals)
+            
+            # Compute NMSE
+            nmse = Tsp.compute_NMSE(signals, sparse_signals, dictionary)
+
+            # Add sparsity and NMSE to the dictionaries
+            sparsity_results[laplacian][num_scal] = sparsity
+            nmse_results[laplacian][num_scal] = nmse
+
+    return sparsity_results, nmse_results
+
+
+def signal_compression_exp3(point_cloud, hyperparameters):
+    '''
+    Function that takes in input a point cloud and a dictionary of hyperparameters and performs signal compression experiment 3 on the data
+    Returns:
+    - sparsity_results
+    - nmse_results
+    '''
+    # Initialize result dictionaries
+    sparsity_results = defaultdict(dict)
+    nmse_results = defaultdict(dict)
+    # Hyperparameters
+    num_scales = hyperparameters['num_scales']
+    laplacians = hyperparameters['laplacians']
+    num_signals = hyperparameters['num_signals']
+    eps = hyperparameters['eps']
+    eps_pca = hyperparameters['eps_pca']
+    k = hyperparameters['k']
+    gamma = hyperparameters['gamma']
+    SEED = hyperparameters['SEED']
+
+    for laplacian in laplacians:
+
+        # Create TSP (topological signal processing) object
+        cube = TSP(point_cloud, eps=eps, eps_pca=eps_pca, k=k, laplacian_code=laplacian, gamma=gamma)
+
+        signals = None
+
+        for num_scal in num_scales[::-1]:
+            # Create dictionary
+            dictionary = cube.create_dictionary(scales=[2**(j-num_scal//2) for j in range(num_scal)])
+
+            if num_scal == num_scales[-1]:
+                # Generate signals for the corresponding laplacian and dictionary
+                signals, cov, signals_GT = cube.generate_kraichnan_signals(num_signals=num_signals, SEED=SEED)
+
+            # Sparsify signals
+            sparse_signals = cube.sparsify_signals(signals, dictionary)
+
+            # Compute sparsity
+            sparsity =  cube.compute_sparsity(sparse_signals)
+            
+            # Compute NMSE
+            nmse = cube.compute_NMSE(signals, sparse_signals, dictionary)
+
+            # Add sparsity and NMSE to the dictionaries
+            sparsity_results[laplacian][num_scal] = sparsity
+            nmse_results[laplacian][num_scal] = nmse
+
+    return sparsity_results, nmse_results
+
+
+
+
+def plot_sparsity_vs_nmse(num_scales, sparsity_results, nmse_results):
+    # Scatterplot of sparsity vs. nmse
+    fig, ax = plt.subplots(1,2, figsize=(15,5))
+    colors = {
+        'Connection': plt.cm.Reds(np.linspace(0.4, 1, len(num_scales))),
+        'Connection Normalized': plt.cm.Blues(np.linspace(0.4, 1, len(num_scales))),
+        'Trivial': plt.cm.Greens(np.linspace(0.4, 1, len(num_scales))),
+        'Trivial Normalized': plt.cm.Purples(np.linspace(0.4, 1, len(num_scales))),
+        'Sheaf': plt.cm.Greys(np.linspace(0.4, 1, len(num_scales)))
+    }
+    markers = {'Connection': 'o', 'Connection Normalized': '*', 'Trivial': 'X', 'Trivial Normalized': '^', 'Sheaf': 'X',}
+    for laplacian in ['Connection','Trivial']:
+        for l, num_scal in enumerate(num_scales):
+            ax[0].scatter(
+                sparsity_results[laplacian][num_scal], nmse_results[laplacian][num_scal],
+                color=colors[laplacian][l],
+                marker=markers[laplacian],
+                label=f"{laplacian} with {num_scal} scales"
+            )
+            ax[0].set_xlabel("Sparsity")
+            ax[0].set_ylabel("NMSE")
+            ax[0].set_title("Connection Laplacian vs. Trivial Laplacian")
+            ax[0].legend()
+
+    for laplacian in ['Connection Normalized', 'Trivial Normalized']:
+        for l, num_scal in enumerate(num_scales):
+            ax[1].scatter(
+                sparsity_results[laplacian][num_scal], nmse_results[laplacian][num_scal],
+                color=colors[laplacian][l],
+                marker=markers[laplacian],
+                label=f"{laplacian} with {num_scal} scales"
+            )
+            ax[1].set_xlabel("Sparsity")
+            ax[1].set_ylabel("NMSE")
+            ax[1].set_title("Normalized Connection Laplacian vs. Normalized Trivial Laplacian")
+            ax[1].set_xlim(0.0995,0.1015)
+            ax[1].legend()
+    plt.show()
+
+def plot_avg_results_vs_num_scales(num_scales, laplacians, sparsity_results, nmse_results):
+    # Compute average sparsity and nmse for each laplacian and number of scales
+    cube_sparsity_avg = {
+        laplacian: {
+            num_scal: np.mean(sparsity_results[laplacian][num_scal])
+            for num_scal in num_scales
+        }
+        for laplacian in laplacians
+    }
+    cube_nmse_avg = {
+        laplacian: {
+            num_scal: np.mean(nmse_results[laplacian][num_scal])
+            for num_scal in num_scales
+        }
+        for laplacian in laplacians
+    }
+
+    # Plot nmse curves
+    fig, ax = plt.subplots(1,2, figsize=(15,5))
+    for laplacian in laplacians:
+        # NMSE vs. Number of Scales
+        ax[0].plot(num_scales, [y[1] for y in sorted(cube_nmse_avg[laplacian].items(), key=lambda x: x[0])],label=laplacian)
+        ax[0].set_xlabel("Number of scales")
+        ax[0].set_ylabel("NMSE")
+        ax[0].set_title(f"Average NMSE vs. Number of Scales")
+        ax[0].legend()
+        # Sparsity vs. Number of Scales
+        ax[1].plot(num_scales, [y[1] for y in sorted(cube_sparsity_avg[laplacian].items(), key=lambda x: x[0])],label=laplacian)
+        ax[1].set_xlabel("Number of scales")
+        ax[1].set_ylabel("Sparsity")
+        ax[1].set_title(f"Average Sparsity vs. Number of Scales")
+        ax[1].legend()
+    plt.show()

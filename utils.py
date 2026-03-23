@@ -1,4 +1,5 @@
 import numpy as np
+import matplotlib.pyplot as plt
 
 # Function that computes a Fibonacci Sphere
 def fibonacci_sphere(N):
