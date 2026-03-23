@@ -107,6 +107,27 @@ class TSP(VDM):
     # Signal Compression
     ################################################################
 
+
+    # Function that generates signals from linear combinations of the wavelet dictionary
+    def generate_random_lc_signals(self, dictionary, num_signals=100, SEED=42, interval=[-10,10]):
+        '''
+        Function that generates signals from linear combinations of the wavelet dictionary
+        Inputs:
+        dictionary = wavelet dictionary
+        num_signals = number of signals to generate
+        SEED = random seed
+        Returns:
+        X = signals
+        '''
+        self._ensure_wav_object()
+        X = np.zeros((dictionary.shape[0], num_signals))
+        rng = np.random.default_rng(SEED)
+        for i in range(num_signals):
+            combination = dictionary @ (rng.random(size=dictionary.shape[1]) * (interval[1] - interval[0]) + interval[0])
+            X[:, i] = combination
+        return X
+
+
     # Function that generates that generates vector fields with kraichnan and samples from them
     def generate_kraichnan_signals(self, num_signals=500, M=100, Sigma=None, len_scale=10, SEED=42):
         '''
@@ -217,7 +238,7 @@ class TSP(VDM):
         sparsity = np.zeros(num_signals)
 
         for i in range(num_signals):
-            sparsity[i] = np.sum(np.abs(sparse_signals[:,i])>0) / sparse_signals.shape[0] * 100 
+            sparsity[i] = np.sum(np.abs(sparse_signals[:,i])>0) / sparse_signals.shape[0]
         return sparsity
     
     # Function that computes the NMSE
