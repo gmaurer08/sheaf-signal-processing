@@ -384,26 +384,26 @@ def signal_compression_exp3(point_cloud, hyperparameters):
     for laplacian in laplacians:
 
         # Create TSP (topological signal processing) object
-        cube = TSP(point_cloud, eps=eps, eps_pca=eps_pca, k=k, laplacian_code=laplacian, gamma=gamma)
+        Tsp = TSP(point_cloud, eps=eps, eps_pca=eps_pca, k=k, laplacian_code=laplacian, gamma=gamma)
 
         signals = None
 
         for num_scal in num_scales[::-1]:
             # Create dictionary
-            dictionary = cube.create_dictionary(scales=[2**(j-num_scal//2) for j in range(num_scal)])
+            dictionary = Tsp.create_dictionary(scales=[2**(j-num_scal//2) for j in range(num_scal)])
 
             if num_scal == num_scales[-1]:
                 # Generate signals for the corresponding laplacian and dictionary
-                signals, cov, signals_GT = cube.generate_kraichnan_signals(num_signals=num_signals, SEED=SEED)
+                signals, cov, signals_GT = Tsp.generate_kraichnan_signals(num_signals=num_signals, SEED=SEED)
 
             # Sparsify signals
-            sparse_signals = cube.sparsify_signals(signals, dictionary)
+            sparse_signals = Tsp.sparsify_signals(signals, dictionary)
 
             # Compute sparsity
-            sparsity =  cube.compute_sparsity(sparse_signals)
+            sparsity =  Tsp.compute_sparsity(sparse_signals)
             
             # Compute NMSE
-            nmse = cube.compute_NMSE(signals, sparse_signals, dictionary)
+            nmse = Tsp.compute_NMSE(signals, sparse_signals, dictionary)
 
             # Add sparsity and NMSE to the dictionaries
             sparsity_results[laplacian][num_scal] = sparsity

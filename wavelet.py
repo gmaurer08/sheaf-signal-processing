@@ -52,6 +52,17 @@ class Wavelet:
         idx = np.argsort(eigvals)[::-1]
         eigvals = eigvals[idx]
         eigvecs = eigvecs[:,idx]
+        ## Handle complex eigenvalues with tiny imaginary part
+        # Suppress imaginary part if below 1e-15
+        # If the eigenvalues are complex, suppress the imaginary part
+        if np.any(np.iscomplex(eigvals)):
+            for i in range(len(eigvals)):
+                if np.abs(eigvals[i].imag) < 1e-12:
+                    eigvals[i] = eigvals[i].real
+            # If all values are real now, change data type from complex to float
+            if np.all(np.isreal(eigvals)):
+                eigvals = eigvals.astype(np.float64)
+        ##
         self.eigvals = eigvals
         self.eigvecs = eigvecs
         return eigvals, eigvecs
@@ -112,6 +123,10 @@ class Wavelet:
             spectral_scaling = self.g(self.eigvals * scale)
             # Compute the wavelets for all shifts
             wavelet_dict[:,i*num_shifts:(i+1)*num_shifts] = self.eigvecs @ np.diag(spectral_scaling) @ self.eigvecs.T
+            ##
+            #print(f"Spectral scaling: {spectral_scaling}")
+            #print(f"Eigenvectors: {self.eigvecs}")
+            ##
             #for j, shift in enumerate(shifts):
             #    weights = np.multiply(spectral_scaling, self.eigvecs[shift])
             #    wavelet_dict[:,i*num_shifts+j] = self.eigvecs @ weights
@@ -119,6 +134,10 @@ class Wavelet:
         if normalize:
             col_norms = np.linalg.norm(wavelet_dict, axis=0)
             wavelet_dict = wavelet_dict/col_norms
+        #
+        #print(f"Dictionary shape: {wavelet_dict.shape}")
+        #print(f"Number of NaN values in the dictionary: {np.isnan(wavelet_dict).sum()}")
+        #
         return wavelet_dict
     
     # Function that builds an dictionary for a given list of (scale, shift) tuples

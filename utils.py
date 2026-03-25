@@ -42,13 +42,13 @@ def geodetic_to_ecef(lat_deg, lon_deg, height_m):
 
     N = a / np.sqrt(1 - e2 * sin_lat**2)
 
-    #x = (N + height_m) * cos_lat * np.cos(lon)
-    #y = (N + height_m) * cos_lat * np.sin(lon)
-    #z = (N * (1 - e2) + height_m) * sin_lat
+    x = (N + height_m) * cos_lat * np.cos(lon)
+    y = (N + height_m) * cos_lat * np.sin(lon)
+    z = (N * (1 - e2) + height_m) * sin_lat
 
-    x = cos_lat * np.cos(lon)
-    y = cos_lat * np.sin(lon)
-    z = sin_lat
+    #x = cos_lat * np.cos(lon)
+    #y = cos_lat * np.sin(lon)
+    #z = sin_lat
 
     return x, y, z
 
