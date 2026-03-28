@@ -11,7 +11,7 @@ import pandas as pd
 from tqdm import tqdm
 import seaborn as sns
 from collections import defaultdict
-from utils import fibonacci_sphere, geodetic_to_ecef, project_to_tangent
+from utils import *
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -21,7 +21,7 @@ np.random.seed(SEED)
 
 # Topological Signal Processing Class
 class TSP(VDM):
-    def __init__(self, data, eps, eps_pca, k, laplacian_code='Connection Normalized', gamma=0.95):
+    def __init__(self, data, eps, eps_pca, k, laplacian_code='Connection Normalized', gamma=0.95, h=1, t=1, p=1):
         super().__init__(data, eps, eps_pca, k, gamma)
 
         # dictionary that maps laplacian name codes to the VDM class methods that compute them
@@ -41,6 +41,11 @@ class TSP(VDM):
 
         self.laplacian = None # variable that will store the chosen laplacian
         self.wav = None # object that will store a wavelet object for sparse sheaf signal processing
+
+        # Wavelet parameters
+        self.h = h
+        self.t = t
+        self.p = p
 
     ################################################################
     # Plotting + Helper Functions
@@ -89,7 +94,7 @@ class TSP(VDM):
     # Function that creates a wavelet object
     def create_wav_object(self):
         self._ensure_laplacian()
-        self.wav = Wavelet(self.laplacian)
+        self.wav = Wavelet(self.laplacian, self.h, self.t, self.p)
         return self.wav
     
     # Function that ensures the wavelet object is created
@@ -97,10 +102,23 @@ class TSP(VDM):
         if self.wav is None:
             self.create_wav_object()
 
+    # Function that adjusts the wavelet parameters so that the kernel is adapted to the eigenvalues
+    def _adjust_kernel_parameters(self):
+        self._ensure_wav_object()
+        self.wav._ensure_eig_laplacian()
+        eigvals = self.wav.eigvals
+        l_max = np.max(np.abs(eigvals))
+        self.h = 1.0
+        self.p = 1.0
+        self.t = 3.0 / (l_max ** self.p + 1e-12)
+        self.wav.set_kernel_parameters(self.h, self.t, self.p)
+
     # Function that computes a wavelet dictionary with all shifts and scales in the list scales
-    def create_dictionary(self, scales, normalize=False):
+    def create_dictionary(self, scales, normalize=False, adjust_kernel=False):
         self._ensure_wav_object()
         wav = self.wav
+        if adjust_kernel:
+            self._adjust_kernel_parameters()
         return wav.make_dictionary(scales, normalize=normalize)
 
     ################################################################
@@ -256,7 +274,6 @@ class TSP(VDM):
         for k in range(num_signals):
             nmse[k] = self.NMSE(X_GT[:,k], dictionary @ sparse_signals[:,k])
         return nmse
-    
 
 
 def signal_compression_exp1(point_cloud, hyperparameters):
@@ -277,6 +294,7 @@ def signal_compression_exp1(point_cloud, hyperparameters):
     eps_pca = hyperparameters['eps_pca']
     k = hyperparameters['k']
     gamma = hyperparameters['gamma']
+    adjust_kernel = hyperparameters['adjust_kernel']
 
     for laplacian in laplacians:
 
@@ -287,7 +305,7 @@ def signal_compression_exp1(point_cloud, hyperparameters):
 
         for num_scal in num_scales[::-1]:
             # Create dictionary
-            dictionary = Tsp.create_dictionary(scales=[2**(j-num_scal//2) for j in range(num_scal)])
+            dictionary = Tsp.create_dictionary(scales=[2**(j-num_scal//2) for j in range(num_scal)], adjust_kernel=adjust_kernel)
 
             if num_scal == num_scales[-1]:
                 # Generate signals for the corresponding laplacian and dictionary
@@ -330,6 +348,7 @@ def signal_compression_exp2(point_cloud, hyperparameters):
     k = hyperparameters['k']
     gamma = hyperparameters['gamma']
     SEED = hyperparameters['SEED']
+    adjust_kernel = hyperparameters['adjust_kernel']
     sigma = 3
 
     # Signals
@@ -343,7 +362,7 @@ def signal_compression_exp2(point_cloud, hyperparameters):
 
         for num_scal in num_scales[::-1]:
             # Create dictionary
-            dictionary = Tsp.create_dictionary(scales=[2**(j-num_scal//2) for j in range(num_scal)])
+            dictionary = Tsp.create_dictionary(scales=[2**(j-num_scal//2) for j in range(num_scal)], adjust_kernel=adjust_kernel)
 
             # Sparsify signals
             sparse_signals = Tsp.sparsify_signals(signals, dictionary)
@@ -380,6 +399,7 @@ def signal_compression_exp3(point_cloud, hyperparameters):
     k = hyperparameters['k']
     gamma = hyperparameters['gamma']
     SEED = hyperparameters['SEED']
+    adjust_kernel = hyperparameters['adjust_kernel']
 
     for laplacian in laplacians:
 
@@ -390,7 +410,7 @@ def signal_compression_exp3(point_cloud, hyperparameters):
 
         for num_scal in num_scales[::-1]:
             # Create dictionary
-            dictionary = Tsp.create_dictionary(scales=[2**(j-num_scal//2) for j in range(num_scal)])
+            dictionary = Tsp.create_dictionary(scales=[2**(j-num_scal//2) for j in range(num_scal)], adjust_kernel=adjust_kernel)
 
             if num_scal == num_scales[-1]:
                 # Generate signals for the corresponding laplacian and dictionary
@@ -411,6 +431,57 @@ def signal_compression_exp3(point_cloud, hyperparameters):
 
     return sparsity_results, nmse_results
 
+
+
+def signal_compression(point_cloud, hyperparameters, signals):
+    '''
+    Function that takes in input a point cloud and a dictionary of hyperparameters and performs signal compression experiment 3 on the data
+    Returns:
+    - sparsity_results
+    - nmse_results
+    '''
+    # Initialize result dictionaries
+    sparsity_results = defaultdict(dict)
+    nmse_results = defaultdict(dict)
+    # Hyperparameters
+    num_scales = hyperparameters['num_scales']
+    laplacians = hyperparameters['laplacians']
+    eps = hyperparameters['eps']
+    eps_pca = hyperparameters['eps_pca']
+    k = hyperparameters['k']
+    gamma = hyperparameters['gamma']
+    SEED = hyperparameters['SEED']
+    h = hyperparameters['h']
+    t = hyperparameters['t']
+    p = hyperparameters['p']
+    normalize = hyperparameters['normalize']
+    adjust_kernel = hyperparameters['adjust_kernel']
+
+    for laplacian in laplacians:
+
+        # Create TSP (topological signal processing) object
+        Tsp = TSP(point_cloud, eps=eps, eps_pca=eps_pca, k=k, laplacian_code=laplacian, gamma=gamma, h=h, t=t, p=p)
+
+        for num_scal in num_scales:
+            # Create dictionary
+            dictionary = Tsp.create_dictionary(scales=[2**(j-num_scal//2) for j in range(num_scal)], normalize=normalize, adjust_kernel=adjust_kernel)
+            
+            #print(f"Inside Signal Compression Function: Number of NaN values in dictionary: {np.isnan(dictionary).sum()}")
+
+            # Sparsify signals
+            sparse_signals = Tsp.sparsify_signals(signals, dictionary)
+
+            # Compute sparsity
+            sparsity =  Tsp.compute_sparsity(sparse_signals)
+            
+            # Compute NMSE
+            nmse = Tsp.compute_NMSE(signals, sparse_signals, dictionary)
+
+            # Add sparsity and NMSE to the dictionaries
+            sparsity_results[laplacian][num_scal] = sparsity
+            nmse_results[laplacian][num_scal] = nmse
+
+    return sparsity_results, nmse_results
 
 
 

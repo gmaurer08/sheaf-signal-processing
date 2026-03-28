@@ -10,16 +10,16 @@ SEED = 42
 np.random.seed(SEED)
 
 class Wavelet:
-    def __init__(self,L):
+    def __init__(self,L,h=1,t=1,p=1):
         # Laplacian and its eigendecomposition
         self.L = L
         self.eigvals = None
         self.eigvecs = None
 
         # kernel parameters (default values)
-        self.h = 1
-        self.t = 1
-        self.p = 1
+        self.h = h
+        self.t = t
+        self.p = p
     
     # Kernel parameter modification
     def set_kernel_parameters(self,h,t,p):
@@ -124,7 +124,7 @@ class Wavelet:
             # Compute the wavelets for all shifts
             wavelet_dict[:,i*num_shifts:(i+1)*num_shifts] = self.eigvecs @ np.diag(spectral_scaling) @ self.eigvecs.T
             ##
-            #print(f"Spectral scaling: {spectral_scaling}")
+            #print(f"Inside Wavelet class: Spectral scaling: {spectral_scaling}")
             #print(f"Eigenvectors: {self.eigvecs}")
             ##
             #for j, shift in enumerate(shifts):
@@ -136,7 +136,7 @@ class Wavelet:
             wavelet_dict = wavelet_dict/col_norms
         #
         #print(f"Dictionary shape: {wavelet_dict.shape}")
-        #print(f"Number of NaN values in the dictionary: {np.isnan(wavelet_dict).sum()}")
+        #print(f"Inside Wavelet class: Number of NaN values in the dictionary: {np.isnan(wavelet_dict).sum()}")
         #
         return wavelet_dict
     
