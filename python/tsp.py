@@ -2,16 +2,16 @@ import numpy as np
 import matplotlib.pyplot as plt
 import networkx as nx
 from sklearn.neighbors import NearestNeighbors
-from vdm import VDM
+from python.vdm import VDM
 import cvxpy as cp
 from sklearn.linear_model import OrthogonalMatchingPursuit
-from wavelet import Wavelet
-from builder import CochainSample # builder.py file provided by project supervisor
+from python.wavelet import Wavelet
+from python.builder import CochainSample # builder.py file provided by project supervisor
 import pandas as pd
 from tqdm import tqdm
 import seaborn as sns
 from collections import defaultdict
-from utils import *
+from python.utils import *
 import warnings
 warnings.filterwarnings("ignore")
 

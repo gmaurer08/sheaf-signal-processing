@@ -217,7 +217,7 @@ __marimo__/
 *.pkl
 *.parquet
 /scraper.ipynb
-# /builder.py
+/python/builder.py
 /disclaimer.txt
 observations/
 topography/
@@ -227,3 +227,5 @@ topography/
 /images
 /result_images
 /results
+/old_main.ipynb
+/old_main2.ipynb
