@@ -10,6 +10,8 @@ sheaf-signal-processing/
 ├── LICENSE
 ├── .gitignore
 ├── main.ipynb
+├── vdm.ipynb
+├── wavelet.ipynb
 ├── python/
 │   ├── tsp.py
 │   ├── utils.py
@@ -19,6 +21,8 @@ sheaf-signal-processing/
 ```
 
  * [main.ipynb](./main.ipynb)
+ * [vdm.ipynb](./vdm.ipynb)
+ * [wavelet.ipynb](./wavelet.ipynb)
  * [python](./python)
    * [tsp.py](./python/tsp.py)
    * [utils.py](./python/utils.py)
