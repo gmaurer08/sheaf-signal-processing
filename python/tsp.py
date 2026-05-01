@@ -122,7 +122,7 @@ class TSP(VDM):
         return wav.make_dictionary(scales, normalize=normalize)
 
     ################################################################
-    # Signal Compression
+    # Signal Compression + Denoising Functions
     ################################################################
 
 
@@ -264,7 +264,7 @@ class TSP(VDM):
         return np.linalg.norm(x - x_hat)**2 / np.linalg.norm(x)**2
     
     # Function that computes the Normalized Mean Squared Error for each signal 
-    def compute_NMSE(self, X_GT, sparse_signals, dictionary):
+    def compute_NMSE(self, signals, sparse_signals, dictionary):
 
         self._ensure_wav_object()
 
@@ -272,9 +272,44 @@ class TSP(VDM):
         nmse = np.zeros(num_signals)
         
         for k in range(num_signals):
-            nmse[k] = self.NMSE(X_GT[:,k], dictionary @ sparse_signals[:,k])
+            nmse[k] = self.NMSE(signals[:,k], dictionary @ sparse_signals[:,k])
         return nmse
 
+
+    # Function that computes the reconstruction SNR
+    def snr_rec(self, signal, reconstruction):
+        return np.sum(signal**2) / np.sum((signal - reconstruction)**2)
+
+    # Function that reconstructs a signal
+    def reconstruct_signals(self, sparse_signals, wav_dict):
+        self._ensure_wav_object()
+        reconstructed_signals = np.zeros((wav_dict.shape[0], sparse_signals.shape[1]))
+        for i in range(sparse_signals.shape[1]):
+            #print("Shape wav_dict:", wav_dict.shape)
+            #print("Shape sparse_signals:", sparse_signals.shape)
+            reconstructed_signals[:,i] = wav_dict @ sparse_signals[:,i]
+        return reconstructed_signals
+    
+    # Function that computes the reconstruction SNR for all signals
+    def compute_snr_rec(self, gt_signals, reconstructed_signals):
+        num_signals = reconstructed_signals.shape[1]
+        snr_rec = np.zeros(num_signals)
+        for k in range(num_signals):
+            snr_rec[k] = self.snr_rec(gt_signals[:,k], reconstructed_signals[:,k])
+        return snr_rec
+    
+    # Function that computes the gain of the reconstruction SNR
+    def snr_gain(self, snr_rec, snr):
+        return snr_rec / snr
+    
+    # Function that computes the gain of the reconstruction SNR for all signals
+    def compute_snr_gain(self, snr_rec, snr):
+        num_signals = snr_rec.shape[0]
+        snr_gain = np.zeros(num_signals)
+        for k in range(num_signals):
+            snr_gain[k] = self.snr_gain(snr_rec[k], snr)
+        return snr_gain
+    
 
 def signal_compression_exp1(point_cloud, hyperparameters):
     ''' 
@@ -330,7 +365,7 @@ def signal_compression_exp1(point_cloud, hyperparameters):
 
 def signal_compression_exp2(point_cloud, hyperparameters):
     '''
-    Function that takes in input a point cloud and a dictionary of hyperparameters and performs signal compression experiment 3 on the data
+    Function that takes in input a point cloud and a dictionary of hyperparameters and performs signal compression experiment 2 on the data
     Returns:
     - sparsity_results
     - nmse_results
@@ -483,7 +518,11 @@ def signal_compression(point_cloud, hyperparameters, signals):
 
     return sparsity_results, nmse_results
 
-
+# Function that adds noise to a signal based on the SNR
+def add_noise(signal, SNR):
+    P_signal = np.mean(signal**2)
+    P_noise = P_signal / SNR
+    return signal + np.random.normal(scale=np.sqrt(P_noise), size=signal.shape)
 
 def plot_sparsity_vs_nmse(num_scales, sparsity_results, nmse_results):
     # Scatterplot of sparsity vs. nmse
@@ -524,6 +563,7 @@ def plot_sparsity_vs_nmse(num_scales, sparsity_results, nmse_results):
             ax[1].legend()
     plt.show()
 
+
 def plot_avg_results_vs_num_scales(num_scales, laplacians, sparsity_results, nmse_results):
     # Compute average sparsity and nmse for each laplacian and number of scales
     cube_sparsity_avg = {
@@ -555,5 +595,119 @@ def plot_avg_results_vs_num_scales(num_scales, laplacians, sparsity_results, nms
         ax[1].set_xlabel("Number of scales")
         ax[1].set_ylabel("Sparsity")
         ax[1].set_title(f"Average Sparsity vs. Number of Scales")
+        ax[1].legend()
+    plt.show()
+
+
+def plot_sparsity_vs_snr_rec(num_scales, sparsity_results, snr_rec_results):
+    # Scatterplot of sparsity vs. nmse
+    fig, ax = plt.subplots(1,2, figsize=(15,5))
+    colors = {
+        'Connection': plt.cm.Reds(np.linspace(0.4, 1, len(num_scales))),
+        'Connection Normalized': plt.cm.Blues(np.linspace(0.4, 1, len(num_scales))),
+        'Trivial': plt.cm.Greens(np.linspace(0.4, 1, len(num_scales))),
+        'Trivial Normalized': plt.cm.Purples(np.linspace(0.4, 1, len(num_scales))),
+        'Sheaf': plt.cm.Greys(np.linspace(0.4, 1, len(num_scales)))
+    }
+    markers = {'Connection': 'o', 'Connection Normalized': '*', 'Trivial': 'X', 'Trivial Normalized': '^', 'Sheaf': 'X',}
+    for laplacian in ['Connection','Trivial']:
+        for l, num_scal in enumerate(num_scales):
+            ax[0].scatter(
+                sparsity_results[laplacian][num_scal], snr_rec_results[laplacian][num_scal],
+                color=colors[laplacian][l],
+                marker=markers[laplacian],
+                label=f"{laplacian} with {num_scal} scales"
+            )
+            ax[0].set_xlabel("Sparsity")
+            ax[0].set_ylabel("Reconstruction SNR")
+            ax[0].set_title("Connection Laplacian vs. Trivial Laplacian")
+            ax[0].legend()
+
+    for laplacian in ['Connection Normalized', 'Trivial Normalized']:
+        for l, num_scal in enumerate(num_scales):
+            ax[1].scatter(
+                sparsity_results[laplacian][num_scal], snr_rec_results[laplacian][num_scal],
+                color=colors[laplacian][l],
+                marker=markers[laplacian],
+                label=f"{laplacian} with {num_scal} scales"
+            )
+            ax[1].set_xlabel("Sparsity")
+            ax[1].set_ylabel("Reconstruction SNR")
+            ax[1].set_title("Normalized Connection Laplacian vs. Normalized Trivial Laplacian")
+            ax[1].set_xlim(0.0995,0.1015)
+            ax[1].legend()
+    plt.show()
+
+def plot_sparsity_vs_gain(num_scales, sparsity_results, snr_rec_results):
+    # Scatterplot of sparsity vs. nmse
+    fig, ax = plt.subplots(1,2, figsize=(15,5))
+    colors = {
+        'Connection': plt.cm.Reds(np.linspace(0.4, 1, len(num_scales))),
+        'Connection Normalized': plt.cm.Blues(np.linspace(0.4, 1, len(num_scales))),
+        'Trivial': plt.cm.Greens(np.linspace(0.4, 1, len(num_scales))),
+        'Trivial Normalized': plt.cm.Purples(np.linspace(0.4, 1, len(num_scales))),
+        'Sheaf': plt.cm.Greys(np.linspace(0.4, 1, len(num_scales)))
+    }
+    markers = {'Connection': 'o', 'Connection Normalized': '*', 'Trivial': 'X', 'Trivial Normalized': '^', 'Sheaf': 'X',}
+    for laplacian in ['Connection','Trivial']:
+        for l, num_scal in enumerate(num_scales):
+            ax[0].scatter(
+                sparsity_results[laplacian][num_scal], snr_rec_results[laplacian][num_scal],
+                color=colors[laplacian][l],
+                marker=markers[laplacian],
+                label=f"{laplacian} with {num_scal} scales"
+            )
+            ax[0].set_xlabel("Sparsity")
+            ax[0].set_ylabel("Gain")
+            ax[0].set_title("Connection Laplacian vs. Trivial Laplacian")
+            ax[0].legend()
+
+    for laplacian in ['Connection Normalized', 'Trivial Normalized']:
+        for l, num_scal in enumerate(num_scales):
+            ax[1].scatter(
+                sparsity_results[laplacian][num_scal], snr_rec_results[laplacian][num_scal],
+                color=colors[laplacian][l],
+                marker=markers[laplacian],
+                label=f"{laplacian} with {num_scal} scales"
+            )
+            ax[1].set_xlabel("Sparsity")
+            ax[1].set_ylabel("Gain")
+            ax[1].set_title("Normalized Connection Laplacian vs. Normalized Trivial Laplacian")
+            ax[1].set_xlim(0.0995,0.1015)
+            ax[1].legend()
+    plt.show()
+
+
+def plot_avg_results_vs_num_scales2(num_scales, laplacians, snr_rec_results, gain_results):
+    # Compute average sparsity and nmse for each laplacian and number of scales
+    cube_sparsity_avg = {
+        laplacian: {
+            num_scal: np.mean(snr_rec_results[laplacian][num_scal])
+            for num_scal in num_scales
+        }
+        for laplacian in laplacians
+    }
+    cube_nmse_avg = {
+        laplacian: {
+            num_scal: np.mean(gain_results[laplacian][num_scal])
+            for num_scal in num_scales
+        }
+        for laplacian in laplacians
+    }
+
+    # Plot nmse curves
+    fig, ax = plt.subplots(1,2, figsize=(15,5))
+    for laplacian in laplacians:
+        # NMSE vs. Number of Scales
+        ax[0].plot(num_scales, [y[1] for y in sorted(cube_nmse_avg[laplacian].items(), key=lambda x: x[0])],label=laplacian)
+        ax[0].set_xlabel("Number of scales")
+        ax[0].set_ylabel("Reconstruction SNR")
+        ax[0].set_title(f"Average SNR vs. Number of Scales")
+        ax[0].legend()
+        # Sparsity vs. Number of Scales
+        ax[1].plot(num_scales, [y[1] for y in sorted(cube_sparsity_avg[laplacian].items(), key=lambda x: x[0])],label=laplacian)
+        ax[1].set_xlabel("Number of scales")
+        ax[1].set_ylabel("Gain")
+        ax[1].set_title(f"Average Gain vs. Number of Scales")
         ax[1].legend()
     plt.show()
