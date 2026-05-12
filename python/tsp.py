@@ -311,6 +311,15 @@ class TSP(VDM):
         return snr_gain
     
 
+
+
+
+############################################################################################################
+########################################### SIGNAL COMPRESSION #############################################
+############################################################################################################
+
+
+
 def signal_compression_exp1(point_cloud, hyperparameters):
     ''' 
     Function that takes in input a point cloud and a dictionary of hyperparameters and performs signal compression experiment 1 on the data
@@ -530,11 +539,230 @@ def signal_compression(point_cloud, hyperparameters, signals):
 
     return sparsity_results, nmse_results
 
+
+
+############################################################################################################
+########################################## SIGNAL DENOISING ################################################
+############################################################################################################
+
+
+
+
 # Function that adds noise to a signal based on the SNR
 def add_noise(signal, SNR):
     P_signal = np.mean(signal**2)
     P_noise = P_signal / SNR
     return signal + np.random.normal(scale=np.sqrt(P_noise), size=signal.shape)
+
+
+
+
+
+def signal_denoising_exp1(point_cloud, hyperparameters):
+
+    # Initialize result dictionaries
+    sparsity_results = defaultdict(dict)
+    nmse_results = defaultdict(dict)
+    snr_rec_results = defaultdict(dict)
+    snr_gain_results = defaultdict(dict)
+
+    # Hyperparameters
+    num_scales = hyperparameters['num_scales']
+    laplacians = hyperparameters['laplacians']
+    num_signals = hyperparameters['num_signals']
+    eps = hyperparameters['eps']
+    eps_pca = hyperparameters['eps_pca']
+    k = hyperparameters['k']
+    gamma = hyperparameters['gamma']
+    adjust_kernel = hyperparameters['adjust_kernel']
+    SNR = hyperparameters['SNR']
+
+    for laplacian in laplacians:
+
+        # Create TSP (topological signal processing) object
+        Tsp = TSP(point_cloud, eps=eps, eps_pca=eps_pca, k=k, laplacian_code=laplacian, gamma=gamma)
+
+        signals = None
+
+        for num_scal in num_scales[::-1]:
+            # Create dictionary
+            dictionary = Tsp.create_dictionary(scales=[2**(j-num_scal//2) for j in range(num_scal)], adjust_kernel=adjust_kernel)
+
+            if num_scal == num_scales[-1]:
+                # Generate signals for the corresponding laplacian and dictionary
+                gt_signals = Tsp.generate_random_lc_signals(dictionary, num_signals=num_signals)
+
+                # Add noise
+                signals = add_noise(gt_signals, SNR)
+
+            # Sparsify signals
+            sparse_signals = Tsp.sparsify_signals(signals, dictionary)
+
+            # Compute sparsity
+            sparsity =  Tsp.compute_sparsity(sparse_signals)
+            
+            # Compute NMSE
+            nmse = Tsp.compute_NMSE(gt_signals, sparse_signals, dictionary)
+
+            # Reconstruct signals
+            reconstructed_signals = Tsp.reconstruct_signals(sparse_signals, dictionary)
+
+            # Compute Reconstruction SNR
+            SNR_rec = Tsp.compute_snr_rec(gt_signals, reconstructed_signals)
+
+            # Compute SNR Gain
+            SNR_gain = Tsp.compute_snr_gain(SNR_rec, SNR)
+
+            # Add results to the dictionaries
+            sparsity_results[laplacian][num_scal] = sparsity
+            nmse_results[laplacian][num_scal] = nmse
+            snr_rec_results[laplacian][num_scal] = SNR_rec
+            snr_gain_results[laplacian][num_scal] = SNR_gain
+        
+    return sparsity_results, nmse_results, snr_rec_results, snr_gain_results
+
+
+
+def signal_denoising_exp2(point_cloud, hyperparameters):
+
+    # Initialize result dictionaries
+    sparsity_results = defaultdict(dict)
+    nmse_results = defaultdict(dict)
+    snr_rec_results = defaultdict(dict)
+    snr_gain_results = defaultdict(dict)
+
+    # Hyperparameters
+    num_scales = hyperparameters['num_scales']
+    laplacians = hyperparameters['laplacians']
+    num_signals = hyperparameters['num_signals']
+    eps = hyperparameters['eps']
+    eps_pca = hyperparameters['eps_pca']
+    k = hyperparameters['k']
+    gamma = hyperparameters['gamma']
+    SEED = hyperparameters['SEED']
+    adjust_kernel = hyperparameters['adjust_kernel']
+    SNR = hyperparameters['SNR']
+    sigma = 3
+
+    # Signals
+    np.random.seed(SEED)
+    gt_signals = np.random.normal(scale=sigma, size=(2*point_cloud.shape[0],num_signals)) # signal dimension = manifold_dim * num_points
+
+    # Add noise
+    signals = add_noise(gt_signals, SNR)
+
+    for laplacian in laplacians:
+
+        # Create TSP (topological signal processing) object
+        Tsp = TSP(point_cloud, eps=eps, eps_pca=eps_pca, k=k, laplacian_code=laplacian, gamma=gamma)
+
+        for num_scal in num_scales[::-1]:
+            # Create dictionary
+            dictionary = Tsp.create_dictionary(scales=[2**(j-num_scal//2) for j in range(num_scal)], adjust_kernel=adjust_kernel)
+
+            # Sparsify signals
+            sparse_signals = Tsp.sparsify_signals(signals, dictionary)
+
+            # Compute sparsity
+            sparsity =  Tsp.compute_sparsity(sparse_signals)
+            
+            # Compute NMSE
+            nmse = Tsp.compute_NMSE(gt_signals, sparse_signals, dictionary)
+
+            # Reconstruct signals
+            reconstructed_signals = Tsp.reconstruct_signals(sparse_signals, dictionary)
+
+            # Compute Reconstruction SNR
+            SNR_rec = Tsp.compute_snr_rec(gt_signals, reconstructed_signals)
+
+            # Compute SNR Gain
+            SNR_gain = Tsp.compute_snr_gain(SNR_rec, SNR)
+
+            # Add results to the dictionaries
+            sparsity_results[laplacian][num_scal] = sparsity
+            nmse_results[laplacian][num_scal] = nmse
+            snr_rec_results[laplacian][num_scal] = SNR_rec
+            snr_gain_results[laplacian][num_scal] = SNR_gain
+
+    return sparsity_results, nmse_results, snr_rec_results, snr_gain_results
+
+
+
+
+
+def signal_denoising_exp3(point_cloud, hyperparameters):
+
+    # Initialize result dictionaries
+    sparsity_results = defaultdict(dict)
+    nmse_results = defaultdict(dict)
+    snr_rec_results = defaultdict(dict)
+    snr_gain_results = defaultdict(dict)
+
+    # Hyperparameters
+    num_scales = hyperparameters['num_scales']
+    laplacians = hyperparameters['laplacians']
+    num_signals = hyperparameters['num_signals']
+    eps = hyperparameters['eps']
+    eps_pca = hyperparameters['eps_pca']
+    k = hyperparameters['k']
+    gamma = hyperparameters['gamma']
+    SEED = hyperparameters['SEED']
+    adjust_kernel = hyperparameters['adjust_kernel']
+    SNR = hyperparameters['SNR']
+
+    for laplacian in laplacians:
+
+        # Create TSP (topological signal processing) object
+        Tsp = TSP(point_cloud, eps=eps, eps_pca=eps_pca, k=k, laplacian_code=laplacian, gamma=gamma)
+
+        signals = None
+
+        for num_scal in num_scales[::-1]:
+
+            # Create dictionary
+            dictionary = Tsp.create_dictionary(scales=[2**(j-num_scal//2) for j in range(num_scal)], adjust_kernel=adjust_kernel)
+
+            if num_scal == num_scales[-1]:
+                # Generate signals for the corresponding laplacian and dictionary
+                gt_signals, _, _ = Tsp.generate_kraichnan_signals(num_signals=num_signals, SEED=SEED)
+
+                # Add noise
+                signals = add_noise(signals, SNR)
+
+            # Sparsify signals
+            sparse_signals = Tsp.sparsify_signals(signals, dictionary)
+
+            # Compute sparsity
+            sparsity =  Tsp.compute_sparsity(sparse_signals)
+            
+            # Compute NMSE
+            nmse = Tsp.compute_NMSE(gt_signals, sparse_signals, dictionary)
+
+            # Reconstruct signals
+            reconstructed_signals = Tsp.reconstruct_signals(sparse_signals, dictionary)
+
+            # Compute Reconstruction SNR
+            SNR_rec = Tsp.compute_snr_rec(gt_signals, reconstructed_signals)
+
+            # Compute SNR Gain
+            SNR_gain = Tsp.compute_snr_gain(SNR_rec, SNR)
+
+            # Add results to the dictionaries
+            sparsity_results[laplacian][num_scal] = sparsity
+            nmse_results[laplacian][num_scal] = nmse
+            snr_rec_results[laplacian][num_scal] = SNR_rec
+            snr_gain_results[laplacian][num_scal] = SNR_gain
+
+    return sparsity_results, nmse_results, snr_rec_results, snr_gain_results
+
+
+
+
+############################################################################################################
+############################################## PLOTTING ####################################################
+############################################################################################################
+
+
 
 def plot_sparsity_vs_nmse(num_scales, sparsity_results, nmse_results, subtitle=None):
     # Scatterplot of sparsity vs. nmse
@@ -617,7 +845,7 @@ def plot_avg_results_vs_num_scales(num_scales, laplacians, sparsity_results, nms
             ax[0].set_title(f"Average NMSE vs. Number of Scales\n{subtitle}")
         else:
             ax[0].set_title(f"Average NMSE vs. Number of Scales")
-        ax[0].legend()
+        ax[0].legend(fontsize=8)
         # Sparsity vs. Number of Scales
         ax[1].plot(num_scales, [y[1] for y in sorted(cube_sparsity_avg[laplacian].items(), key=lambda x: x[0])],label=laplacian)
         ax[1].set_xlabel("Number of scales")
@@ -626,8 +854,9 @@ def plot_avg_results_vs_num_scales(num_scales, laplacians, sparsity_results, nms
             ax[1].set_title(f"Average Sparsity vs. Number of Scales\n{subtitle}")
         else:
             ax[1].set_title(f"Average Sparsity vs. Number of Scales")
-        ax[1].legend()
+        ax[1].legend(fontsize=8)
     plt.show()
+
 
 
 def plot_sparsity_vs_snr_rec(num_scales, sparsity_results, snr_rec_results, subtitle=None):
@@ -640,6 +869,13 @@ def plot_sparsity_vs_snr_rec(num_scales, sparsity_results, snr_rec_results, subt
         'Trivial Normalized': plt.cm.Purples(np.linspace(0.4, 1, len(num_scales))),
         'Sheaf': plt.cm.Greys(np.linspace(0.4, 1, len(num_scales)))
     }
+    names = {
+        'Connection': 'Conn.',
+        'Connection Normalized': 'Conn. Norm.',
+        'Trivial': 'Trivial',
+        'Trivial Normalized': 'Trivial Norm.',
+        'Sheaf': 'Sheaf'
+    }
     markers = {'Connection': 'o', 'Connection Normalized': '*', 'Trivial': 'X', 'Trivial Normalized': '^', 'Sheaf': 'X',}
     for laplacian in ['Connection','Trivial']:
         for l, num_scal in enumerate(num_scales):
@@ -647,7 +883,7 @@ def plot_sparsity_vs_snr_rec(num_scales, sparsity_results, snr_rec_results, subt
                 sparsity_results[laplacian][num_scal], snr_rec_results[laplacian][num_scal],
                 color=colors[laplacian][l],
                 marker=markers[laplacian],
-                label=f"{laplacian} with {num_scal} scales"
+                label=f"{names[laplacian]} with {num_scal} scales"
             )
             ax[0].set_xlabel("Sparsity")
             ax[0].set_ylabel("Reconstruction SNR")
@@ -655,7 +891,7 @@ def plot_sparsity_vs_snr_rec(num_scales, sparsity_results, snr_rec_results, subt
                 ax[0].set_title(f"Connection Laplacian vs. Trivial Laplacian\n{subtitle}")
             else:
                 ax[0].set_title("Connection Laplacian vs. Trivial Laplacian")
-            ax[0].legend()
+            ax[0].legend(fontsize=8)
 
     for laplacian in ['Connection Normalized', 'Trivial Normalized']:
         for l, num_scal in enumerate(num_scales):
@@ -663,7 +899,7 @@ def plot_sparsity_vs_snr_rec(num_scales, sparsity_results, snr_rec_results, subt
                 sparsity_results[laplacian][num_scal], snr_rec_results[laplacian][num_scal],
                 color=colors[laplacian][l],
                 marker=markers[laplacian],
-                label=f"{laplacian} with {num_scal} scales"
+                label=f"{names[laplacian]} with {num_scal} scales"
             )
             ax[1].set_xlabel("Sparsity")
             ax[1].set_ylabel("Reconstruction SNR")
@@ -672,7 +908,7 @@ def plot_sparsity_vs_snr_rec(num_scales, sparsity_results, snr_rec_results, subt
             else:
                 ax[1].set_title("Normalized Connection Laplacian vs. Normalized Trivial Laplacian")
             #ax[1].set_xlim(0.0995,0.1015)
-            ax[1].legend()
+            ax[1].legend(fontsize=8)
     plt.show()
 
 def plot_sparsity_vs_gain(num_scales, sparsity_results, snr_rec_results, subtitle=None):
@@ -685,6 +921,13 @@ def plot_sparsity_vs_gain(num_scales, sparsity_results, snr_rec_results, subtitl
         'Trivial Normalized': plt.cm.Purples(np.linspace(0.4, 1, len(num_scales))),
         'Sheaf': plt.cm.Greys(np.linspace(0.4, 1, len(num_scales)))
     }
+    names = {
+        'Connection': 'Conn.',
+        'Connection Normalized': 'Conn. Norm.',
+        'Trivial': 'Trivial',
+        'Trivial Normalized': 'Trivial Norm.',
+        'Sheaf': 'Sheaf'
+    }
     markers = {'Connection': 'o', 'Connection Normalized': '*', 'Trivial': 'X', 'Trivial Normalized': '^', 'Sheaf': 'X',}
     for laplacian in ['Connection','Trivial']:
         for l, num_scal in enumerate(num_scales):
@@ -692,7 +935,7 @@ def plot_sparsity_vs_gain(num_scales, sparsity_results, snr_rec_results, subtitl
                 sparsity_results[laplacian][num_scal], snr_rec_results[laplacian][num_scal],
                 color=colors[laplacian][l],
                 marker=markers[laplacian],
-                label=f"{laplacian} with {num_scal} scales"
+                label=f"{names[laplacian]} with {num_scal} scales"
             )
             ax[0].set_xlabel("Sparsity")
             ax[0].set_ylabel("Gain")
@@ -700,7 +943,7 @@ def plot_sparsity_vs_gain(num_scales, sparsity_results, snr_rec_results, subtitl
                 ax[0].set_title(f"Connection Laplacian vs. Trivial Laplacian\n{subtitle}")
             else:
                 ax[0].set_title("Connection Laplacian vs. Trivial Laplacian")
-            ax[0].legend()
+            ax[0].legend(fontsize=8)
 
     for laplacian in ['Connection Normalized', 'Trivial Normalized']:
         for l, num_scal in enumerate(num_scales):
@@ -708,7 +951,7 @@ def plot_sparsity_vs_gain(num_scales, sparsity_results, snr_rec_results, subtitl
                 sparsity_results[laplacian][num_scal], snr_rec_results[laplacian][num_scal],
                 color=colors[laplacian][l],
                 marker=markers[laplacian],
-                label=f"{laplacian} with {num_scal} scales"
+                label=f"{names[laplacian]} with {num_scal} scales"
             )
             ax[1].set_xlabel("Sparsity")
             ax[1].set_ylabel("Gain")
@@ -717,7 +960,7 @@ def plot_sparsity_vs_gain(num_scales, sparsity_results, snr_rec_results, subtitl
             else:
                 ax[1].set_title("Normalized Connection Laplacian vs. Normalized Trivial Laplacian")
             #ax[1].set_xlim(0.0995,0.1015)
-            ax[1].legend()
+            ax[1].legend(fontsize=8)
     plt.show()
 
 
@@ -749,7 +992,7 @@ def plot_avg_results_vs_num_scales2(num_scales, laplacians, snr_rec_results, gai
             ax[0].set_title(f"Average SNR vs. Number of Scales\n{subtitle}")
         else:
             ax[0].set_title(f"Average SNR vs. Number of Scales")
-        ax[0].legend()
+        ax[0].legend(fontsize=8)
         # Sparsity vs. Number of Scales
         ax[1].plot(num_scales, [y[1] for y in sorted(cube_sparsity_avg[laplacian].items(), key=lambda x: x[0])],label=laplacian)
         ax[1].set_xlabel("Number of scales")
@@ -758,77 +1001,5 @@ def plot_avg_results_vs_num_scales2(num_scales, laplacians, snr_rec_results, gai
             ax[1].set_title(f"Average Gain vs. Number of Scales\n{subtitle}")
         else:
             ax[1].set_title(f"Average Gain vs. Number of Scales")
-        ax[1].legend()
+        ax[1].legend(fontsize=8)
     plt.show()
-
-
-
-
-
-# Signal denoising experiment
-def signal_denoising_exp(point_cloud, hyperparameters):
-    '''
-    Function that takes in input a point cloud and a dictionary of hyperparameters and performs a signal denoising experiment on the data
-    Returns:
-    - sparsity_results
-    - nmse_results
-    '''
-    # Initialize result dictionaries
-    sparsity_results = defaultdict(dict)
-    nmse_results = defaultdict(dict)
-    snr_rec_results = defaultdict(dict)
-    snr_gain_results = defaultdict(dict)
-
-    # Hyperparameters
-    num_scales = hyperparameters['num_scales']
-    laplacians = hyperparameters['laplacians']
-    num_signals = hyperparameters['num_signals']
-    eps = hyperparameters['eps']
-    eps_pca = hyperparameters['eps_pca']
-    k = hyperparameters['k']
-    gamma = hyperparameters['gamma']
-    SEED = hyperparameters['SEED']
-    adjust_kernel = hyperparameters['adjust_kernel']
-    SNR = hyperparameters['SNR']
-
-    sigma = 3
-
-    # Signals
-    np.random.seed(SEED)
-    gt_signals = np.random.normal(scale=sigma, size=(2*point_cloud.shape[0],num_signals)) # signal dimension = manifold_dim * num_points
-    signals = add_noise(gt_signals, SNR)
-
-    for laplacian in laplacians:
-
-        # Create TSP (topological signal processing) object
-        Tsp = TSP(point_cloud, eps=eps, eps_pca=eps_pca, k=k, laplacian_code=laplacian, gamma=gamma)
-
-        for num_scal in num_scales[::-1]:
-            # Create dictionary
-            dictionary = Tsp.create_dictionary(scales=[2**(j-num_scal//2) for j in range(num_scal)], adjust_kernel=adjust_kernel)
-
-            # Sparsify signals
-            sparse_signals = Tsp.sparsify_signals(signals, dictionary)
-
-            # Compute sparsity
-            sparsity =  Tsp.compute_sparsity(sparse_signals)
-            
-            # Compute NMSE
-            nmse = Tsp.compute_NMSE(gt_signals, sparse_signals, dictionary)
-
-            # Reconstruct signals
-            reconstructed_signals = Tsp.reconstruct_signals(sparse_signals, dictionary)
-
-            # Compute Reconstruction SNR
-            SNR_rec = Tsp.compute_snr_rec(signals, reconstructed_signals)
-
-            # Compute SNR Gain
-            SNR_gain = Tsp.compute_snr_gain(SNR_rec, SNR)
-
-            # Add results to the dictionaries
-            sparsity_results[laplacian][num_scal] = sparsity
-            nmse_results[laplacian][num_scal] = nmse
-            snr_rec_results[laplacian][num_scal] = SNR_rec
-            snr_gain_results[laplacian][num_scal] = SNR_gain
-
-    return sparsity_results, nmse_results, snr_rec_results, snr_gain_results
