@@ -226,7 +226,7 @@ topography/
 /old results 2
 /images
 /result_images
-/results
+#/results
 /old_main.ipynb
 /old_main2.ipynb
 /gma.ipynb

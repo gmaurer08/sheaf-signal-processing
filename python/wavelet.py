@@ -185,9 +185,34 @@ class Wavelet:
             return sparse_signal
         # Solve LASSO, basis pursuit problem with convex optimization using OMP (Orthogonal Matching Pursuit)
         if method=='OMP':
-            omp = OrthogonalMatchingPursuit()
+            # Compute a tolerance based on signal energy
+            tol = 1e-2 * np.linalg.norm(f)**2
+            omp = OrthogonalMatchingPursuit(
+                tol=tol,
+                fit_intercept=False
+            )
             omp.fit(wav_dict,f)
             sparse_signal = omp.coef_
+
+            ######
+            '''
+            print('Inside OMP')
+            coef = omp.coef_
+            f_hat = wav_dict @ coef
+            resid = np.linalg.norm(f - f_hat)**2
+            target = 1e-3 * np.linalg.norm(f)**2
+
+            print("nnz:", np.count_nonzero(coef))
+            print("residual:", resid)
+            print("target:", target)
+            print("NMSE:", resid / np.linalg.norm(f)**2)
+            print("OMP iterations:", np.count_nonzero(coef))
+            print("dict rank:", np.linalg.matrix_rank(wav_dict))
+            print("dict cond:", np.linalg.cond(wav_dict))
+            print("atom norm min/max:", np.linalg.norm(wav_dict, axis=0).min(),
+                np.linalg.norm(wav_dict, axis=0).max())
+            '''
+            ######
             return sparse_signal
         else:
             raise ValueError("Method must be 'OMP' or 'CVXPY'")
