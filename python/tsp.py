@@ -715,7 +715,7 @@ def signal_denoising_exp3(point_cloud, hyperparameters):
         # Create TSP (topological signal processing) object
         Tsp = TSP(point_cloud, eps=eps, eps_pca=eps_pca, k=k, laplacian_code=laplacian, gamma=gamma)
 
-        signals = None
+        gt_signals = None
 
         for num_scal in num_scales[::-1]:
 
@@ -727,7 +727,7 @@ def signal_denoising_exp3(point_cloud, hyperparameters):
                 gt_signals, _, _ = Tsp.generate_kraichnan_signals(num_signals=num_signals, SEED=SEED)
 
                 # Add noise
-                signals = add_noise(signals, SNR)
+                signals = add_noise(gt_signals, SNR)
 
             # Sparsify signals
             sparse_signals = Tsp.sparsify_signals(signals, dictionary)
@@ -764,7 +764,7 @@ def signal_denoising_exp3(point_cloud, hyperparameters):
 
 
 
-def plot_sparsity_vs_nmse(num_scales, sparsity_results, nmse_results, subtitle=None):
+def plot_sparsity_vs_nmse(num_scales, sparsity_results, nmse_results, image_path, subtitle=None):
     # Scatterplot of sparsity vs. nmse
     fig, ax = plt.subplots(1,2, figsize=(15,5))
     colors = {
@@ -814,10 +814,13 @@ def plot_sparsity_vs_nmse(num_scales, sparsity_results, nmse_results, subtitle=N
                 ax[1].set_title("Normalized Connection Laplacian vs. Normalized Trivial Laplacian")
             #ax[1].set_xlim(0.0995,0.1015)
             ax[1].legend(fontsize=8)
+    plt.tight_layout()
+    plt.savefig(image_path, dpi=300, bbox_inches='tight')
     plt.show()
+    
 
 
-def plot_avg_results_vs_num_scales(num_scales, laplacians, sparsity_results, nmse_results, subtitle=None):
+def plot_avg_results_vs_num_scales(num_scales, laplacians, sparsity_results, nmse_results, image_path, subtitle=None):
     # Compute average sparsity and nmse for each laplacian and number of scales
     cube_sparsity_avg = {
         laplacian: {
@@ -855,11 +858,13 @@ def plot_avg_results_vs_num_scales(num_scales, laplacians, sparsity_results, nms
         else:
             ax[1].set_title(f"Average Sparsity vs. Number of Scales")
         ax[1].legend(fontsize=8)
+    plt.tight_layout()
+    plt.savefig(image_path, dpi=300, bbox_inches='tight')
     plt.show()
 
 
 
-def plot_sparsity_vs_snr_rec(num_scales, sparsity_results, snr_rec_results, subtitle=None):
+def plot_sparsity_vs_snr_rec(num_scales, sparsity_results, snr_rec_results, image_path, subtitle=None):
     # Scatterplot of sparsity vs. nmse
     fig, ax = plt.subplots(1,2, figsize=(15,5))
     colors = {
@@ -909,9 +914,11 @@ def plot_sparsity_vs_snr_rec(num_scales, sparsity_results, snr_rec_results, subt
                 ax[1].set_title("Normalized Connection Laplacian vs. Normalized Trivial Laplacian")
             #ax[1].set_xlim(0.0995,0.1015)
             ax[1].legend(fontsize=8)
+    plt.tight_layout()
+    plt.savefig(image_path, dpi=300, bbox_inches='tight')
     plt.show()
 
-def plot_sparsity_vs_gain(num_scales, sparsity_results, snr_rec_results, subtitle=None):
+def plot_sparsity_vs_gain(num_scales, sparsity_results, snr_rec_results, image_path, subtitle=None):
     # Scatterplot of sparsity vs. nmse
     fig, ax = plt.subplots(1,2, figsize=(15,5))
     colors = {
@@ -961,10 +968,12 @@ def plot_sparsity_vs_gain(num_scales, sparsity_results, snr_rec_results, subtitl
                 ax[1].set_title("Normalized Connection Laplacian vs. Normalized Trivial Laplacian")
             #ax[1].set_xlim(0.0995,0.1015)
             ax[1].legend(fontsize=8)
+    plt.tight_layout()
+    plt.savefig(image_path, dpi=300, bbox_inches='tight')
     plt.show()
 
 
-def plot_avg_results_vs_num_scales2(num_scales, laplacians, snr_rec_results, gain_results, subtitle=None):
+def plot_avg_results_vs_num_scales2(num_scales, laplacians, snr_rec_results, gain_results, image_path, subtitle=None):
     # Compute average sparsity and nmse for each laplacian and number of scales
     cube_sparsity_avg = {
         laplacian: {
@@ -1002,4 +1011,6 @@ def plot_avg_results_vs_num_scales2(num_scales, laplacians, snr_rec_results, gai
         else:
             ax[1].set_title(f"Average Gain vs. Number of Scales")
         ax[1].legend(fontsize=8)
+    plt.tight_layout()
+    plt.savefig(image_path, dpi=300, bbox_inches='tight')
     plt.show()
