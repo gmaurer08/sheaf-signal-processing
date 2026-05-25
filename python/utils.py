@@ -75,3 +75,30 @@ def project_to_tangent(V, E1, E2):
     v2 = np.einsum("ij,ij->i", V, E2)
 
     return np.column_stack((v1, v2))
+
+
+
+# Function that builds a local refernce frame given lat, lon coordinates in degrees
+def local_reference_frame(lat_deg, lon_deg):
+
+    # Convert degrees to radians
+    lat = np.radians(lat_deg)
+    lon = np.radians(lon_deg)
+
+    # Create local 3D reference frame
+    e_E = np.array([-np.sin(lon), np.cos(lon), 0.0]) # East
+    e_N = np.array([-np.sin(lat) * np.cos(lon), -np.sin(lat) * np.sin(lon), np.cos(lat)]) # North
+    e_U = np.array([np.cos(lat) * np.cos(lon), np.cos(lat) * np.sin(lon), np.sin(lat)]) # Up (radial)
+
+    return e_E, e_N, e_U
+
+# Function that, given wind direction and location, computes the 3D coordinates of the wind in the local reference frame
+def wind_uv_to_xyz(u, v, lat_deg, lon_deg):
+
+    # Get the local reference frame directions
+    e_E, e_N, e_U = local_reference_frame(lat_deg, lon_deg)
+
+    # Compute the 3D wind
+    wind_xyz = u * e_E + v * e_N
+
+    return wind_xyz
