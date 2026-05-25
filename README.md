@@ -2,6 +2,8 @@
 
 This repository contains the code for the sheaf signal processing project for the course *Signal Processing for Machine Learning* (2025/2026) of the Data Science Master's Degree at Sapienza.
 
+Complete plots and results are available here: https://drive.google.com/drive/u/0/folders/1TZ8Z4sKbMNhvf5auTMkt2JT7fPjrCByC.
+
 ### Structure of the repository
 
 ```text
