@@ -757,6 +757,73 @@ def signal_denoising_exp3(point_cloud, hyperparameters):
 
 
 
+def signal_denoising(point_cloud, hyperparameters, gt_signals):
+    '''
+    Function that takes in input a point cloud and a dictionary of hyperparameters and performs signal compression experiment 3 on the data
+    Returns:
+    - sparsity_results
+    - nmse_results
+    '''
+    # Initialize result dictionaries
+    sparsity_results = defaultdict(dict)
+    nmse_results = defaultdict(dict)
+    snr_rec_results = defaultdict(dict)
+    snr_gain_results = defaultdict(dict)
+
+    # Hyperparameters
+    num_scales = hyperparameters['num_scales']
+    laplacians = hyperparameters['laplacians']
+    eps = hyperparameters['eps']
+    eps_pca = hyperparameters['eps_pca']
+    k = hyperparameters['k']
+    gamma = hyperparameters['gamma']
+    SEED = hyperparameters['SEED']
+    h = hyperparameters['h']
+    t = hyperparameters['t']
+    p = hyperparameters['p']
+    normalize = hyperparameters['normalize']
+    adjust_kernel = hyperparameters['adjust_kernel']
+    SNR = hyperparameters['SNR']
+
+    # Add noise
+    signals = add_noise(gt_signals, SNR)
+
+    for laplacian in laplacians:
+
+        # Create TSP (topological signal processing) object
+        Tsp = TSP(point_cloud, eps=eps, eps_pca=eps_pca, k=k, laplacian_code=laplacian, gamma=gamma, h=h, t=t, p=p)
+
+        for num_scal in num_scales:
+            # Create dictionary
+            dictionary = Tsp.create_dictionary(scales=[2**(j-num_scal//2) for j in range(num_scal)], normalize=normalize, adjust_kernel=adjust_kernel)
+            
+            # Sparsify signals
+            sparse_signals = Tsp.sparsify_signals(signals, dictionary)
+
+            # Compute sparsity
+            sparsity =  Tsp.compute_sparsity(sparse_signals)
+            
+            # Compute NMSE
+            nmse = Tsp.compute_NMSE(gt_signals, sparse_signals, dictionary)
+
+            # Reconstruct signals
+            reconstructed_signals = Tsp.reconstruct_signals(sparse_signals, dictionary)
+
+            # Compute Reconstruction SNR
+            SNR_rec = Tsp.compute_snr_rec(gt_signals, reconstructed_signals)
+
+            # Compute SNR Gain
+            SNR_gain = Tsp.compute_snr_gain(SNR_rec, SNR)
+
+            # Add results to the dictionaries
+            sparsity_results[laplacian][num_scal] = sparsity
+            nmse_results[laplacian][num_scal] = nmse
+            snr_rec_results[laplacian][num_scal] = SNR_rec
+            snr_gain_results[laplacian][num_scal] = SNR_gain
+
+    return sparsity_results, nmse_results, snr_rec_results, snr_gain_results
+
+
 
 ############################################################################################################
 ############################################## PLOTTING ####################################################
