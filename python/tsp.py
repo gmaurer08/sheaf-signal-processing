@@ -172,16 +172,37 @@ class TSP(VDM):
         eigvals = self.wav.eigvals
         eigvecs = self.wav.eigvecs
 
+        #def kraichnan_r3(eigvals, eigvecs, alpha):
+        #    '''
+        #    Function that computes a vector field for R^3
+        #    laplacian = string that specifies the laplacian to compute the vector field for,
+        #                possible values: 'Connection Normalized', 'Trivial', 'Trivial Normalized', 'Sheaf'
+        #    alpha = vector of length N with coefficients sampled from a normal distribution
+        #    This function assumes that laplacian eigendecompositions have been computed on the outside
+        #    and are now stored in self.laplacian_eigs
+        #    '''
+        #    U = eigvecs @ np.multiply(self.kernel(eigvals), alpha)
+        #    return U
+
         def kraichnan_r3(eigvals, eigvecs, alpha):
             '''
-            Function that computes a vector field for R^3
-            laplacian = string that specifies the laplacian to compute the vector field for,
-                        possible values: 'Connection Normalized', 'Trivial', 'Trivial Normalized', 'Sheaf'
-            alpha = vector of length N with coefficients sampled from a normal distribution
-            This function assumes that laplacian eigendecompositions have been computed on the outside
-            and are now stored in self.laplacian_eigs
+            Kraichnan-style Gaussian vector field generated from the Laplacian spectrum.
+
+            eigvals: Laplacian eigenvalues
+            eigvecs: Laplacian eigenvectors
+            alpha: iid Gaussian coefficients
             '''
-            U = eigvecs @ np.multiply(self.kernel(eigvals), alpha)
+            lam = np.asarray(eigvals, dtype=float)
+
+            # Avoid singularity at the zero eigenvalue / harmonic modes
+            lam_safe = np.maximum(lam, 1e-12)
+
+            # Kraichnan spectral scaling.
+            # self.kernel(eigvals) can be kept if you already defined the desired spectrum there.
+            coeffs = self.kernel(lam_safe) * alpha
+
+            U = eigvecs @ coeffs
+
             return U
 
         self._ensure_orthonormal_bases()
@@ -1123,6 +1144,8 @@ def plot_avg_res_vs_num_scales(num_scales, laplacians, sparsity_results, nmse_re
         else:
             ax[0].set_title(f"Average NMSE vs. Number of Scales")
         ax[0].legend(fontsize=8)
+        #ax[0].set_yscale('log')
+        ax[0].grid(True, which='major')
         # Sparsity vs. Number of Scales
         ax[1].plot(num_scales, [y[1] for y in sorted(cube_sparsity_avg[laplacian].items(), key=lambda x: x[0])],label=laplacian, linestyle='-', marker='o')
         ax[1].set_xlabel("Number of scales")
@@ -1132,6 +1155,8 @@ def plot_avg_res_vs_num_scales(num_scales, laplacians, sparsity_results, nmse_re
         else:
             ax[1].set_title(f"Average Number of Atoms vs. Number of Scales")
         ax[1].legend(fontsize=8)
+        #ax[1].set_yscale('log')
+        ax[1].grid(True, which='major')
     plt.tight_layout()
     plt.savefig(image_path, dpi=300, bbox_inches='tight')
     plt.show()
