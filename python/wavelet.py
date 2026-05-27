@@ -186,7 +186,7 @@ class Wavelet:
         # Solve LASSO, basis pursuit problem with convex optimization using OMP (Orthogonal Matching Pursuit)
         if method=='OMP':
             # Compute a tolerance based on signal energy
-            tol = 1e-2 * np.linalg.norm(f)**2
+            tol = 1e-3 * np.linalg.norm(f)**2
             omp = OrthogonalMatchingPursuit(
                 tol=tol,
                 fit_intercept=False

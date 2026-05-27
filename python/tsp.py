@@ -181,7 +181,7 @@ class TSP(VDM):
             This function assumes that laplacian eigendecompositions have been computed on the outside
             and are now stored in self.laplacian_eigs
             '''
-            U = eigvecs @ np.multiply(self.kernel(eigvals), alpha) 
+            U = eigvecs @ np.multiply(self.kernel(eigvals), alpha)
             return U
 
         self._ensure_orthonormal_bases()
@@ -1077,6 +1077,60 @@ def plot_avg_results_vs_num_scales2(num_scales, laplacians, snr_rec_results, gai
             ax[1].set_title(f"Average Gain vs. Number of Scales\n{subtitle}")
         else:
             ax[1].set_title(f"Average Gain vs. Number of Scales")
+        ax[1].legend(fontsize=8)
+    plt.tight_layout()
+    plt.savefig(image_path, dpi=300, bbox_inches='tight')
+    plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+def plot_avg_res_vs_num_scales(num_scales, laplacians, sparsity_results, nmse_results, image_path, subtitle=None):
+    # Compute average sparsity and nmse for each laplacian and number of scales
+    cube_sparsity_avg = {
+        laplacian: {
+            num_scal: np.mean(sparsity_results[laplacian][num_scal]*num_scal*600)
+            for num_scal in num_scales
+        }
+        for laplacian in laplacians
+    }
+    cube_nmse_avg = {
+        laplacian: {
+            num_scal: np.mean(nmse_results[laplacian][num_scal])
+            for num_scal in num_scales
+        }
+        for laplacian in laplacians
+    }
+
+    # Plot nmse curves
+    fig, ax = plt.subplots(1,2, figsize=(15,5))
+    for laplacian in laplacians:
+        # NMSE vs. Number of Scales
+        ax[0].plot(num_scales, [y[1] for y in sorted(cube_nmse_avg[laplacian].items(), key=lambda x: x[0])],label=laplacian, linestyle='-', marker='o')
+        ax[0].set_xlabel("Number of scales")
+        ax[0].set_ylabel("Avg. NMSE")
+        if subtitle:
+            ax[0].set_title(f"Average NMSE vs. Number of Scales\n{subtitle}")
+        else:
+            ax[0].set_title(f"Average NMSE vs. Number of Scales")
+        ax[0].legend(fontsize=8)
+        # Sparsity vs. Number of Scales
+        ax[1].plot(num_scales, [y[1] for y in sorted(cube_sparsity_avg[laplacian].items(), key=lambda x: x[0])],label=laplacian, linestyle='-', marker='o')
+        ax[1].set_xlabel("Number of scales")
+        ax[1].set_ylabel("Avg. num. atoms")
+        if subtitle:
+            ax[1].set_title(f"Average Number of Atoms vs. Number of Scales\n{subtitle}")
+        else:
+            ax[1].set_title(f"Average Number of Atoms vs. Number of Scales")
         ax[1].legend(fontsize=8)
     plt.tight_layout()
     plt.savefig(image_path, dpi=300, bbox_inches='tight')
