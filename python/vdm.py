@@ -5,23 +5,23 @@ from sklearn.neighbors import NearestNeighbors
 
 class VDM:
     def __init__(self, data, eps, eps_pca, k=30, gamma=0.95):
-        # Hyperparameters
-        self.eps = eps
-        self.eps_pca = eps_pca
-        self.k = k
-        self.gamma = gamma
+        # Hyperparameters (some are initialized and later updated with lazy computation)
+        self.eps = eps   # epsilon for building the graph with radius nearest neighbours
+        self.eps_pca = eps_pca   # epsilon for the local PCA
+        self.k = k   #  k for building the graph with knn
+        self.gamma = gamma   # threshold for dimension estimation using eigenvalues
         # Data and graph
-        self.data = data
-        self.N = data.shape[0]
-        self.graph = None
+        self.data = data  # the point cloud, N x p  (p=3 in this case)
+        self.N = data.shape[0]   # number of points
+        self.graph = None   # the graph built from the point cloud
         # Orthonormal bases
-        self.neighbor_matrices_svd = None    # U_i, Sigma_i, V_i
-        self.orthonormal_bases = None   # O_i
+        self.neighbor_matrices_svd = None    # U_i, Sigma_i, V_i   singular value decomposition of the shifted and scaled neighbor matrices
+        self.orthonormal_bases = None   # O_i  orthonormal bases that approximate the bases of the tangent planes to the manifold at each point x_i
         # Alignment
-        self.alignment_matrices = None   # O_ij
-        self.dim = None   # d
+        self.alignment_matrices = None   # O_ij  alignment matrices, computed taking the SVD of O_i^T O_j = U S V^T and calculating O_ij = UV^T
+        self.dim = None   # d = estimated dimension of the manifold
         # Vector Diffusion
-        self.weight_matrix = None  # W
+        self.weight_matrix = None  # W  
         self.transition_matrix = None   # A
         self.eig_transition_matrix = None #  mu_k, phi_k for k=0,1,...,N
         self.alignment_block_matrix = None   # S

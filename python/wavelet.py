@@ -133,7 +133,8 @@ class Wavelet:
         # Optional normalization
         if normalize:
             col_norms = np.linalg.norm(wavelet_dict, axis=0)
-            wavelet_dict = wavelet_dict/col_norms
+            keep = col_norms > 1e-12
+            wavelet_dict = wavelet_dict[:, keep] / col_norms[keep]
         #
         #print(f"Dictionary shape: {wavelet_dict.shape}")
         #print(f"Inside Wavelet class: Number of NaN values in the dictionary: {np.isnan(wavelet_dict).sum()}")
@@ -165,7 +166,7 @@ class Wavelet:
             wavelet_dict = wavelet_dict/col_norms
         return wavelet_dict
     
-    def sparse_signal(self,f,wav_dict,method='OMP'):
+    def sparse_signal(self,f,wav_dict,num_atoms,method='OMP'):
         '''
         Function that computes the sparsest representation of a signal f
         f = signal
@@ -186,9 +187,9 @@ class Wavelet:
         # Solve LASSO, basis pursuit problem with convex optimization using OMP (Orthogonal Matching Pursuit)
         if method=='OMP':
             # Compute a tolerance based on signal energy
-            tol = 1e-3 * np.linalg.norm(f)**2
+            #tol = 1e-3 * np.linalg.norm(f)**2
             omp = OrthogonalMatchingPursuit(
-                tol=tol,
+                n_nonzero_coefs=num_atoms,
                 fit_intercept=False
             )
             omp.fit(wav_dict,f)

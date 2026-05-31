@@ -245,8 +245,63 @@ class TSP(VDM):
 
         return X, covariance, X_GT
 
+
+    def generate_geometric_signals(self, num_signals=500, M=100, len_scale=10, SEED=42):
+        """
+        Generate dictionary-independent smooth tangent-bundle signals
+        from a geometry-based covariance on the point cloud.
+        """
+        N = self.data.shape[0]
+        rng = np.random.default_rng(SEED)
+
+        self._ensure_orthonormal_bases()
+        O = self.orthonormal_bases
+
+        # Pairwise squared Euclidean distances on the point cloud
+        P = self.data
+        dist2 = np.sum((P[:, None, :] - P[None, :, :])**2, axis=2)
+
+        # RBF / squared-exponential spatial covariance
+        K = np.exp(-dist2 / (2 * len_scale**2))
+
+        # Small jitter for numerical stability
+        K += 1e-8 * np.eye(N)
+
+        # Sample two tangent coordinates independently at each point
+        X = np.zeros((2 * N, M))
+
+        for m in range(M):
+            u1 = rng.multivariate_normal(mean=np.zeros(N), cov=K)
+            u2 = rng.multivariate_normal(mean=np.zeros(N), cov=K)
+
+            X[0::2, m] = u1
+            X[1::2, m] = u2
+
+        # Empirical covariance
+        X_mean = np.mean(X, axis=1, keepdims=True)
+        X_centered = X - X_mean
+        cov = (X_centered @ X_centered.T) / (X.shape[1] - 1)
+
+        sample = CochainSample(
+            X=X,
+            covariance=cov,
+            X_GT=X,
+            points=self.data,
+            local_bases=O,
+            V=N
+        )
+
+        sampled = sample.random_tangent_bundle_signals(
+            Sigma=None,
+            len_scale=len_scale,
+            M=num_signals,
+            seed=SEED
+        )
+
+        return sampled.X, sampled.covariance, sampled.X_GT
+
     # Function that computes sparse signal representations using OMP or CVXPY
-    def sparsify_signals(self, X, dictionary, method = 'OMP'):
+    def sparsify_signals(self, X, dictionary, num_atoms, method = 'OMP'):
         '''
         Function that sparsifies a matrix of signals X 
         inputs:
@@ -259,7 +314,7 @@ class TSP(VDM):
         self._ensure_wav_object()
         sparse_signals = np.zeros((dictionary.shape[1], X.shape[1])) # number of atoms x number of signals 
         for k in range(X.shape[1]):
-            sparse_signals[:,k] = self.wav.sparse_signal(X[:,k], dictionary, method=method)
+            sparse_signals[:,k] = self.wav.sparse_signal(X[:,k], dictionary, num_atoms, method=method)
         return sparse_signals
 
     # Function that computes the percentage of nonzero coefficient in the sparse signal representations
@@ -445,7 +500,7 @@ def signal_compression_exp2(point_cloud, hyperparameters):
     return sparsity_results, nmse_results
 
 
-def signal_compression_exp3(point_cloud, hyperparameters):
+def signal_compression_exp(point_cloud, hyperparameters):
     '''
     Function that takes in input a point cloud and a dictionary of hyperparameters and performs signal compression experiment 3 on the data
     Returns:
@@ -455,6 +510,7 @@ def signal_compression_exp3(point_cloud, hyperparameters):
     # Initialize result dictionaries
     sparsity_results = defaultdict(dict)
     nmse_results = defaultdict(dict)
+
     # Hyperparameters
     num_scales = hyperparameters['num_scales']
     laplacians = hyperparameters['laplacians']
@@ -465,10 +521,27 @@ def signal_compression_exp3(point_cloud, hyperparameters):
     gamma = hyperparameters['gamma']
     SEED = hyperparameters['SEED']
     adjust_kernel = hyperparameters['adjust_kernel']
+    num_atoms = hyperparameters['num_atoms']
+    len_scale=10
 
     ###
     #print('Experiment 3 running')
     ###
+
+    Tsp_signal = TSP(
+        point_cloud,
+        eps=eps,
+        eps_pca=eps_pca,
+        k=k,
+        laplacian_code=laplacians[0],
+        gamma=gamma
+    )
+
+    signals, cov, signals_GT = Tsp_signal.generate_geometric_signals(
+        num_signals=num_signals,
+        len_scale=len_scale,
+        SEED=SEED
+    )
 
     for laplacian in laplacians:
 
@@ -476,8 +549,6 @@ def signal_compression_exp3(point_cloud, hyperparameters):
 
         # Create TSP (topological signal processing) object
         Tsp = TSP(point_cloud, eps=eps, eps_pca=eps_pca, k=k, laplacian_code=laplacian, gamma=gamma)
-
-        signals = None
 
         for num_scal in num_scales[::-1]:
             
@@ -487,22 +558,24 @@ def signal_compression_exp3(point_cloud, hyperparameters):
             ###
 
             # Create dictionary
-            dictionary = Tsp.create_dictionary(scales=[2**(j-num_scal//2) for j in range(num_scal)], adjust_kernel=adjust_kernel)
+            dictionary = Tsp.create_dictionary(scales=[2**(j-num_scal//2) for j in range(num_scal)], normalize=False, adjust_kernel=adjust_kernel)
 
-            if num_scal == num_scales[-1]:
+            #if num_scal == num_scales[-1]:
                 # Generate signals for the corresponding laplacian and dictionary
-                signals, cov, signals_GT = Tsp.generate_kraichnan_signals(num_signals=num_signals, SEED=SEED)
+            #    signals, cov, signals_GT = Tsp.generate_geometric_signals(num_signals=num_signals, SEED=SEED)
 
-            # Sparsify signals
-            sparse_signals = Tsp.sparsify_signals(signals, dictionary)
+            sparse_signals = dict()
+            sparsity = dict()
 
-            # Compute sparsity
-            sparsity =  Tsp.compute_sparsity(sparse_signals)
-            
-            # Compute NMSE
-            nmse = Tsp.compute_NMSE(signals, sparse_signals, dictionary)
+            nmse = dict()
 
-            # Add sparsity and NMSE to the dictionaries
+            for num in num_atoms:
+                sparse_signals[num] = Tsp.sparsify_signals(signals, dictionary, num)
+
+                sparsity[num] = Tsp.compute_sparsity(sparse_signals[num])
+
+                nmse[num] = Tsp.compute_NMSE(signals, sparse_signals[num],dictionary)
+
             sparsity_results[laplacian][num_scal] = sparsity
             nmse_results[laplacian][num_scal] = nmse
 
@@ -849,6 +922,65 @@ def signal_denoising(point_cloud, hyperparameters, gt_signals):
 ############################################################################################################
 ############################################## PLOTTING ####################################################
 ############################################################################################################
+
+
+
+
+
+
+'''
+def plot_nmse_vs_atoms(laplacians, num_atoms, nmse_results, image_path, subtitle=None):
+    # Compute average sparsity and nmse for each laplacian and number of scales
+    nmse_avg = {
+        laplacian: {
+            num_atoms: {
+                np.mean(nmse_results[laplacian][num_scal][num])
+            }
+            for num_scal in num_scales
+        }
+        for laplacian in laplacians
+    }
+    nmse_avg = {
+        laplacian: {
+            num_scal: np.mean(nmse_results[laplacian][num_scal])
+            for num_scal in num_scales
+        }
+        for laplacian in laplacians
+    }
+
+    # Plot nmse curves
+    fig, ax = plt.subplots(1,2, figsize=(15,5))
+    for laplacian in laplacians:
+        # NMSE vs. Number of Scales
+        ax[0].plot(num_scales, [y[1] for y in sorted(nmse_avg[laplacian].items(), key=lambda x: x[0])],label=laplacian)
+        ax[0].set_xlabel("Number of scales")
+        ax[0].set_ylabel("Avg. NMSE")
+        if subtitle:
+            ax[0].set_title(f"Average NMSE vs. Number of Scales\n{subtitle}")
+        else:
+            ax[0].set_title(f"Average NMSE vs. Number of Scales")
+        ax[0].legend(fontsize=8)
+        # Sparsity vs. Number of Scales
+        ax[1].plot(num_scales, [y[1] for y in sorted(sparsity_avg[laplacian].items(), key=lambda x: x[0])],label=laplacian)
+        ax[1].set_xlabel("Number of scales")
+        ax[1].set_ylabel("Avg. Sparsity")
+        if subtitle:
+            ax[1].set_title(f"Average Sparsity vs. Number of Scales\n{subtitle}")
+        else:
+            ax[1].set_title(f"Average Sparsity vs. Number of Scales")
+        ax[1].legend(fontsize=8)
+    plt.tight_layout()
+    plt.savefig(image_path, dpi=300, bbox_inches='tight')
+    plt.show()
+
+'''
+
+
+
+
+
+
+
 
 
 
