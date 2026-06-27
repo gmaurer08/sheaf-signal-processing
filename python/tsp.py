@@ -10,6 +10,7 @@ from python.builder import CochainSample # builder.py file provided by project s
 import pandas as pd
 from tqdm import tqdm
 import seaborn as sns
+import gstools as gs
 from collections import defaultdict
 from python.utils import *
 import warnings
@@ -125,180 +126,69 @@ class TSP(VDM):
     # Signal Compression + Denoising Functions
     ################################################################
 
-
-    # Function that generates signals from linear combinations of the wavelet dictionary
-    def generate_random_lc_signals(self, dictionary, num_signals=100, SEED=42, interval=[-10,10]):
-        '''
-        Function that generates signals from linear combinations of the wavelet dictionary
-        Inputs:
-        dictionary = wavelet dictionary
-        num_signals = number of signals to generate
-        SEED = random seed
-        Returns:
-        X = signals
-        '''
-        self._ensure_wav_object()
-        X = np.zeros((dictionary.shape[0], num_signals))
-        rng = np.random.default_rng(SEED)
-        for i in range(num_signals):
-            combination = dictionary @ (rng.random(size=dictionary.shape[1]) * (interval[1] - interval[0]) + interval[0])
-            X[:, i] = combination
-        return X
-
-
-    # Function that generates that generates vector fields with kraichnan and samples from them
-    def generate_kraichnan_signals(self, num_signals=500, M=100, Sigma=None, len_scale=10, SEED=42):
-        '''
-        Function that generates vector fields with kraichnan and samples from them
-        Inputs:
-        num_signals = number of signals to generate
-        M = number of Monte Carlo samples in kraichnan
-        n = number of waves in kraichnan
-        SEED = random seed
-        Returns:
-        X = samples
-        covariance = empirical covariance of X
-        X_GT = ground truth
-        '''
-
-        # Monte Carlo samples
-        M = M # number of samples
-        N = self.data.shape[0] # number of nodes
-        X = np.zeros((2*N, M)) # initialize matrix to store samples of the vector field
-        rng = np.random.default_rng(SEED) # random number generator
-
-        self._ensure_wav_object() # ensures that the wavelet object and therefore the laplacian are built
-        self.wav._ensure_eig_laplacian() # ensures that laplacian eigendecomposition is built
-        eigvals = self.wav.eigvals
-        eigvecs = self.wav.eigvecs
-
-        #def kraichnan_r3(eigvals, eigvecs, alpha):
-        #    '''
-        #    Function that computes a vector field for R^3
-        #    laplacian = string that specifies the laplacian to compute the vector field for,
-        #                possible values: 'Connection Normalized', 'Trivial', 'Trivial Normalized', 'Sheaf'
-        #    alpha = vector of length N with coefficients sampled from a normal distribution
-        #    This function assumes that laplacian eigendecompositions have been computed on the outside
-        #    and are now stored in self.laplacian_eigs
-        #    '''
-        #    U = eigvecs @ np.multiply(self.kernel(eigvals), alpha)
-        #    return U
-
-        def kraichnan_r3(eigvals, eigvecs, alpha):
-            '''
-            Kraichnan-style Gaussian vector field generated from the Laplacian spectrum.
-
-            eigvals: Laplacian eigenvalues
-            eigvecs: Laplacian eigenvectors
-            alpha: iid Gaussian coefficients
-            '''
-            lam = np.asarray(eigvals, dtype=float)
-
-            # Avoid singularity at the zero eigenvalue / harmonic modes
-            lam_safe = np.maximum(lam, 1e-12)
-
-            # Kraichnan spectral scaling.
-            # self.kernel(eigvals) can be kept if you already defined the desired spectrum there.
-            coeffs = self.kernel(lam_safe) * alpha
-
-            U = eigvecs @ coeffs
-
-            return U
-
-        self._ensure_orthonormal_bases()
-        O = self.orthonormal_bases
-
-        for m in range(M):
-            # Compute normal random vectors k_i and random scalars z_i
-            U = kraichnan_r3(eigvals, eigvecs, rng.normal(size=self.laplacian.shape[0])) # Field sample
-            X[:,m] = U
-            #for i in range(N):
-                # X[2*i : 2*i+2, m] =  U[2*i:2*i+2]  #  store the field samples in X
-                # before it was O[i].T @ U[2*i:2*i+2] (projection onto orthonormal basis)
-                # I was using sine and cosine waves instead of the eigendecomposition
-                # but now the projection raises errors
-        
-        # Function that computes the empirical covariance
-        def empirical_covariance(X):
-            X_mean = np.mean(X, axis=1, keepdims=True) # 2N x 1
-            X_centered = X - X_mean # 2N x M
-            cov = (X_centered @ X_centered.T) / (X.shape[1] - 1)
-            return cov
-
-        # Compute the empirical covariance
-        cov = empirical_covariance(X)
-
-        # Create a CochainSample object
-        sample = CochainSample(X=X,
-                            covariance=cov,
-                            X_GT=X,
-                            points=self.data,
-                            local_bases=O,
-                            V=N
-                            )
-        # Saplming signals
-        sampled = sample.random_tangent_bundle_signals(Sigma=None,len_scale=len_scale, M=num_signals, seed=SEED)
-        # Get the results
-        X = sampled.X
-        covariance = sampled.covariance
-        X_GT = sampled.X_GT
-
-        return X, covariance, X_GT
-
-
-    def generate_geometric_signals(self, num_signals=500, M=100, len_scale=10, SEED=42):
+    def generate_kraichnan_signals(
+        self,
+        num_signals=500,
+        Sigma=None,
+        len_scale=10,
+        SEED=42):
         """
-        Generate dictionary-independent smooth tangent-bundle signals
-        from a geometry-based covariance on the point cloud.
+        Generate tangent bundle signals using GSTools.
+
+        Parameters
+        ----------
+        num_signals : int
+            Number of random fields to generate.
+
+        Sigma : ndarray, optional
+            3x3 covariance between vector components.
+
+        len_scale : float
+            Spatial correlation length.
+
+        SEED : int
+            Random seed.
+
+        Returns
+        -------
+        X : ndarray
+            Tangent bundle signals (2N x num_signals)
+
+        covariance : ndarray
+            Empirical covariance matrix
+
+        X_GT : ndarray
+            Ground truth signals
         """
+
         N = self.data.shape[0]
-        rng = np.random.default_rng(SEED)
 
+        self._ensure_wav_object()
         self._ensure_orthonormal_bases()
+
         O = self.orthonormal_bases
 
-        # Pairwise squared Euclidean distances on the point cloud
-        P = self.data
-        dist2 = np.sum((P[:, None, :] - P[None, :, :])**2, axis=2)
-
-        # RBF / squared-exponential spatial covariance
-        K = np.exp(-dist2 / (2 * len_scale**2))
-
-        # Small jitter for numerical stability
-        K += 1e-8 * np.eye(N)
-
-        # Sample two tangent coordinates independently at each point
-        X = np.zeros((2 * N, M))
-
-        for m in range(M):
-            u1 = rng.multivariate_normal(mean=np.zeros(N), cov=K)
-            u2 = rng.multivariate_normal(mean=np.zeros(N), cov=K)
-
-            X[0::2, m] = u1
-            X[1::2, m] = u2
-
-        # Empirical covariance
-        X_mean = np.mean(X, axis=1, keepdims=True)
-        X_centered = X - X_mean
-        cov = (X_centered @ X_centered.T) / (X.shape[1] - 1)
+        dummy_X = np.zeros((2 * N, num_signals))
+        dummy_cov = np.zeros((2 * N, 2 * N))
 
         sample = CochainSample(
-            X=X,
-            covariance=cov,
-            X_GT=X,
+            X=dummy_X,
+            covariance=dummy_cov,
+            X_GT=dummy_X.copy(),
             points=self.data,
             local_bases=O,
-            V=N
+            V=N,
         )
 
         sampled = sample.random_tangent_bundle_signals(
-            Sigma=None,
+            Sigma=Sigma,
             len_scale=len_scale,
             M=num_signals,
-            seed=SEED
+            seed=SEED,
         )
 
         return sampled.X, sampled.covariance, sampled.X_GT
+        
 
     # Function that computes sparse signal representations using OMP or CVXPY
     def sparsify_signals(self, X, dictionary, num_atoms, method = 'OMP'):
@@ -395,111 +285,6 @@ class TSP(VDM):
 ############################################################################################################
 
 
-
-def signal_compression_exp1(point_cloud, hyperparameters):
-    ''' 
-    Function that takes in input a point cloud and a dictionary of hyperparameters and performs signal compression experiment 1 on the data
-    Returns:
-    - sparsity_results
-    - nmse_results
-    '''
-    # Initialize result dictionaries
-    sparsity_results = defaultdict(dict)
-    nmse_results = defaultdict(dict)
-    # Hyperparameters
-    num_scales = hyperparameters['num_scales']
-    laplacians = hyperparameters['laplacians']
-    num_signals = hyperparameters['num_signals']
-    eps = hyperparameters['eps']
-    eps_pca = hyperparameters['eps_pca']
-    k = hyperparameters['k']
-    gamma = hyperparameters['gamma']
-    adjust_kernel = hyperparameters['adjust_kernel']
-
-    for laplacian in laplacians:
-
-        # Create TSP (topological signal processing) object
-        Tsp = TSP(point_cloud, eps=eps, eps_pca=eps_pca, k=k, laplacian_code=laplacian, gamma=gamma)
-
-        signals = None
-
-        for num_scal in num_scales[::-1]:
-            # Create dictionary
-            dictionary = Tsp.create_dictionary(scales=[2**(j-num_scal//2) for j in range(num_scal)], adjust_kernel=adjust_kernel)
-
-            if num_scal == num_scales[-1]:
-                # Generate signals for the corresponding laplacian and dictionary
-                signals = Tsp.generate_random_lc_signals(dictionary, num_signals=num_signals)
-
-            # Sparsify signals
-            sparse_signals = Tsp.sparsify_signals(signals, dictionary)
-
-            # Compute sparsity
-            sparsity =  Tsp.compute_sparsity(sparse_signals)
-            
-            # Compute NMSE
-            nmse = Tsp.compute_NMSE(signals, sparse_signals, dictionary)
-
-            # Add sparsity and NMSE to the dictionaries
-            sparsity_results[laplacian][num_scal] = sparsity
-            nmse_results[laplacian][num_scal] = nmse
-        
-    return sparsity_results, nmse_results
-
-
-
-def signal_compression_exp2(point_cloud, hyperparameters):
-    '''
-    Function that takes in input a point cloud and a dictionary of hyperparameters and performs signal compression experiment 2 on the data
-    Returns:
-    - sparsity_results
-    - nmse_results
-    '''
-    # Initialize result dictionaries
-    sparsity_results = defaultdict(dict)
-    nmse_results = defaultdict(dict)
-
-    # Hyperparameters
-    num_scales = hyperparameters['num_scales']
-    laplacians = hyperparameters['laplacians']
-    num_signals = hyperparameters['num_signals']
-    eps = hyperparameters['eps']
-    eps_pca = hyperparameters['eps_pca']
-    k = hyperparameters['k']
-    gamma = hyperparameters['gamma']
-    SEED = hyperparameters['SEED']
-    adjust_kernel = hyperparameters['adjust_kernel']
-    sigma = 3
-
-    # Signals
-    np.random.seed(SEED)
-    signals = np.random.normal(scale=sigma, size=(2*point_cloud.shape[0],num_signals)) # signal dimension = manifold_dim * num_points
-
-    for laplacian in laplacians:
-
-        # Create TSP (topological signal processing) object
-        Tsp = TSP(point_cloud, eps=eps, eps_pca=eps_pca, k=k, laplacian_code=laplacian, gamma=gamma)
-
-        for num_scal in num_scales[::-1]:
-            # Create dictionary
-            dictionary = Tsp.create_dictionary(scales=[2**(j-num_scal//2) for j in range(num_scal)], adjust_kernel=adjust_kernel)
-
-            # Sparsify signals
-            sparse_signals = Tsp.sparsify_signals(signals, dictionary)
-
-            # Compute sparsity
-            sparsity =  Tsp.compute_sparsity(sparse_signals)
-            
-            # Compute NMSE
-            nmse = Tsp.compute_NMSE(signals, sparse_signals, dictionary)
-
-            # Add sparsity and NMSE to the dictionaries
-            sparsity_results[laplacian][num_scal] = sparsity
-            nmse_results[laplacian][num_scal] = nmse
-
-    return sparsity_results, nmse_results
-
-
 def signal_compression_exp(point_cloud, hyperparameters):
     '''
     Function that takes in input a point cloud and a dictionary of hyperparameters and performs signal compression experiment 3 on the data
@@ -508,7 +293,7 @@ def signal_compression_exp(point_cloud, hyperparameters):
     - nmse_results
     '''
     # Initialize result dictionaries
-    sparsity_results = defaultdict(dict)
+    #sparsity_results = defaultdict(dict)
     nmse_results = defaultdict(dict)
 
     # Hyperparameters
@@ -537,7 +322,7 @@ def signal_compression_exp(point_cloud, hyperparameters):
         gamma=gamma
     )
 
-    signals, cov, signals_GT = Tsp_signal.generate_geometric_signals(
+    signals, cov, signals_GT = Tsp_signal.generate_kraichnan_signals(
         num_signals=num_signals,
         len_scale=len_scale,
         SEED=SEED
@@ -572,14 +357,15 @@ def signal_compression_exp(point_cloud, hyperparameters):
             for num in num_atoms:
                 sparse_signals[num] = Tsp.sparsify_signals(signals, dictionary, num)
 
-                sparsity[num] = Tsp.compute_sparsity(sparse_signals[num])
+                #sparsity[num] = Tsp.compute_sparsity(sparse_signals[num])
 
                 nmse[num] = Tsp.compute_NMSE(signals, sparse_signals[num],dictionary)
 
-            sparsity_results[laplacian][num_scal] = sparsity
+            #sparsity_results[laplacian][num_scal] = sparsity
             nmse_results[laplacian][num_scal] = nmse
 
-    return sparsity_results, nmse_results
+    #return sparsity_results, nmse_results
+    return nmse_results
 
 
 
@@ -647,207 +433,6 @@ def add_noise(signal, SNR):
     P_signal = np.mean(signal**2)
     P_noise = P_signal / SNR
     return signal + np.random.normal(scale=np.sqrt(P_noise), size=signal.shape)
-
-
-
-
-
-def signal_denoising_exp1(point_cloud, hyperparameters):
-
-    # Initialize result dictionaries
-    sparsity_results = defaultdict(dict)
-    nmse_results = defaultdict(dict)
-    snr_rec_results = defaultdict(dict)
-    snr_gain_results = defaultdict(dict)
-
-    # Hyperparameters
-    num_scales = hyperparameters['num_scales']
-    laplacians = hyperparameters['laplacians']
-    num_signals = hyperparameters['num_signals']
-    eps = hyperparameters['eps']
-    eps_pca = hyperparameters['eps_pca']
-    k = hyperparameters['k']
-    gamma = hyperparameters['gamma']
-    adjust_kernel = hyperparameters['adjust_kernel']
-    SNR = hyperparameters['SNR']
-
-    for laplacian in laplacians:
-
-        # Create TSP (topological signal processing) object
-        Tsp = TSP(point_cloud, eps=eps, eps_pca=eps_pca, k=k, laplacian_code=laplacian, gamma=gamma)
-
-        signals = None
-
-        for num_scal in num_scales[::-1]:
-            # Create dictionary
-            dictionary = Tsp.create_dictionary(scales=[2**(j-num_scal//2) for j in range(num_scal)], adjust_kernel=adjust_kernel)
-
-            if num_scal == num_scales[-1]:
-                # Generate signals for the corresponding laplacian and dictionary
-                gt_signals = Tsp.generate_random_lc_signals(dictionary, num_signals=num_signals)
-
-                # Add noise
-                signals = add_noise(gt_signals, SNR)
-
-            # Sparsify signals
-            sparse_signals = Tsp.sparsify_signals(signals, dictionary)
-
-            # Compute sparsity
-            sparsity =  Tsp.compute_sparsity(sparse_signals)
-            
-            # Compute NMSE
-            nmse = Tsp.compute_NMSE(gt_signals, sparse_signals, dictionary)
-
-            # Reconstruct signals
-            reconstructed_signals = Tsp.reconstruct_signals(sparse_signals, dictionary)
-
-            # Compute Reconstruction SNR
-            SNR_rec = Tsp.compute_snr_rec(gt_signals, reconstructed_signals)
-
-            # Compute SNR Gain
-            SNR_gain = Tsp.compute_snr_gain(SNR_rec, SNR)
-
-            # Add results to the dictionaries
-            sparsity_results[laplacian][num_scal] = sparsity
-            nmse_results[laplacian][num_scal] = nmse
-            snr_rec_results[laplacian][num_scal] = SNR_rec
-            snr_gain_results[laplacian][num_scal] = SNR_gain
-        
-    return sparsity_results, nmse_results, snr_rec_results, snr_gain_results
-
-
-
-def signal_denoising_exp2(point_cloud, hyperparameters):
-
-    # Initialize result dictionaries
-    sparsity_results = defaultdict(dict)
-    nmse_results = defaultdict(dict)
-    snr_rec_results = defaultdict(dict)
-    snr_gain_results = defaultdict(dict)
-
-    # Hyperparameters
-    num_scales = hyperparameters['num_scales']
-    laplacians = hyperparameters['laplacians']
-    num_signals = hyperparameters['num_signals']
-    eps = hyperparameters['eps']
-    eps_pca = hyperparameters['eps_pca']
-    k = hyperparameters['k']
-    gamma = hyperparameters['gamma']
-    SEED = hyperparameters['SEED']
-    adjust_kernel = hyperparameters['adjust_kernel']
-    SNR = hyperparameters['SNR']
-    sigma = 3
-
-    # Signals
-    np.random.seed(SEED)
-    gt_signals = np.random.normal(scale=sigma, size=(2*point_cloud.shape[0],num_signals)) # signal dimension = manifold_dim * num_points
-
-    # Add noise
-    signals = add_noise(gt_signals, SNR)
-
-    for laplacian in laplacians:
-
-        # Create TSP (topological signal processing) object
-        Tsp = TSP(point_cloud, eps=eps, eps_pca=eps_pca, k=k, laplacian_code=laplacian, gamma=gamma)
-
-        for num_scal in num_scales[::-1]:
-            # Create dictionary
-            dictionary = Tsp.create_dictionary(scales=[2**(j-num_scal//2) for j in range(num_scal)], adjust_kernel=adjust_kernel)
-
-            # Sparsify signals
-            sparse_signals = Tsp.sparsify_signals(signals, dictionary)
-
-            # Compute sparsity
-            sparsity =  Tsp.compute_sparsity(sparse_signals)
-            
-            # Compute NMSE
-            nmse = Tsp.compute_NMSE(gt_signals, sparse_signals, dictionary)
-
-            # Reconstruct signals
-            reconstructed_signals = Tsp.reconstruct_signals(sparse_signals, dictionary)
-
-            # Compute Reconstruction SNR
-            SNR_rec = Tsp.compute_snr_rec(gt_signals, reconstructed_signals)
-
-            # Compute SNR Gain
-            SNR_gain = Tsp.compute_snr_gain(SNR_rec, SNR)
-
-            # Add results to the dictionaries
-            sparsity_results[laplacian][num_scal] = sparsity
-            nmse_results[laplacian][num_scal] = nmse
-            snr_rec_results[laplacian][num_scal] = SNR_rec
-            snr_gain_results[laplacian][num_scal] = SNR_gain
-
-    return sparsity_results, nmse_results, snr_rec_results, snr_gain_results
-
-
-
-
-
-def signal_denoising_exp3(point_cloud, hyperparameters):
-
-    # Initialize result dictionaries
-    sparsity_results = defaultdict(dict)
-    nmse_results = defaultdict(dict)
-    snr_rec_results = defaultdict(dict)
-    snr_gain_results = defaultdict(dict)
-
-    # Hyperparameters
-    num_scales = hyperparameters['num_scales']
-    laplacians = hyperparameters['laplacians']
-    num_signals = hyperparameters['num_signals']
-    eps = hyperparameters['eps']
-    eps_pca = hyperparameters['eps_pca']
-    k = hyperparameters['k']
-    gamma = hyperparameters['gamma']
-    SEED = hyperparameters['SEED']
-    adjust_kernel = hyperparameters['adjust_kernel']
-    SNR = hyperparameters['SNR']
-
-    for laplacian in laplacians:
-
-        # Create TSP (topological signal processing) object
-        Tsp = TSP(point_cloud, eps=eps, eps_pca=eps_pca, k=k, laplacian_code=laplacian, gamma=gamma)
-
-        gt_signals = None
-
-        for num_scal in num_scales[::-1]:
-
-            # Create dictionary
-            dictionary = Tsp.create_dictionary(scales=[2**(j-num_scal//2) for j in range(num_scal)], adjust_kernel=adjust_kernel)
-
-            if num_scal == num_scales[-1]:
-                # Generate signals for the corresponding laplacian and dictionary
-                gt_signals, _, _ = Tsp.generate_kraichnan_signals(num_signals=num_signals, SEED=SEED)
-
-                # Add noise
-                signals = add_noise(gt_signals, SNR)
-
-            # Sparsify signals
-            sparse_signals = Tsp.sparsify_signals(signals, dictionary)
-
-            # Compute sparsity
-            sparsity =  Tsp.compute_sparsity(sparse_signals)
-            
-            # Compute NMSE
-            nmse = Tsp.compute_NMSE(gt_signals, sparse_signals, dictionary)
-
-            # Reconstruct signals
-            reconstructed_signals = Tsp.reconstruct_signals(sparse_signals, dictionary)
-
-            # Compute Reconstruction SNR
-            SNR_rec = Tsp.compute_snr_rec(gt_signals, reconstructed_signals)
-
-            # Compute SNR Gain
-            SNR_gain = Tsp.compute_snr_gain(SNR_rec, SNR)
-
-            # Add results to the dictionaries
-            sparsity_results[laplacian][num_scal] = sparsity
-            nmse_results[laplacian][num_scal] = nmse
-            snr_rec_results[laplacian][num_scal] = SNR_rec
-            snr_gain_results[laplacian][num_scal] = SNR_gain
-
-    return sparsity_results, nmse_results, snr_rec_results, snr_gain_results
 
 
 
@@ -925,370 +510,27 @@ def signal_denoising(point_cloud, hyperparameters, gt_signals):
 
 
 
+def plot_nmse(nmse_results, scale=3):
 
+    plt.figure(figsize=(7, 5))
 
+    for laplacian in nmse_results:
 
-'''
-def plot_nmse_vs_atoms(laplacians, num_atoms, nmse_results, image_path, subtitle=None):
-    # Compute average sparsity and nmse for each laplacian and number of scales
-    nmse_avg = {
-        laplacian: {
-            num_atoms: {
-                np.mean(nmse_results[laplacian][num_scal][num])
-            }
-            for num_scal in num_scales
-        }
-        for laplacian in laplacians
-    }
-    nmse_avg = {
-        laplacian: {
-            num_scal: np.mean(nmse_results[laplacian][num_scal])
-            for num_scal in num_scales
-        }
-        for laplacian in laplacians
-    }
+        if laplacian=='Sheaf':
+            continue
+        
+        atom_dict = nmse_results[laplacian][scale]
 
-    # Plot nmse curves
-    fig, ax = plt.subplots(1,2, figsize=(15,5))
-    for laplacian in laplacians:
-        # NMSE vs. Number of Scales
-        ax[0].plot(num_scales, [y[1] for y in sorted(nmse_avg[laplacian].items(), key=lambda x: x[0])],label=laplacian)
-        ax[0].set_xlabel("Number of scales")
-        ax[0].set_ylabel("Avg. NMSE")
-        if subtitle:
-            ax[0].set_title(f"Average NMSE vs. Number of Scales\n{subtitle}")
-        else:
-            ax[0].set_title(f"Average NMSE vs. Number of Scales")
-        ax[0].legend(fontsize=8)
-        # Sparsity vs. Number of Scales
-        ax[1].plot(num_scales, [y[1] for y in sorted(sparsity_avg[laplacian].items(), key=lambda x: x[0])],label=laplacian)
-        ax[1].set_xlabel("Number of scales")
-        ax[1].set_ylabel("Avg. Sparsity")
-        if subtitle:
-            ax[1].set_title(f"Average Sparsity vs. Number of Scales\n{subtitle}")
-        else:
-            ax[1].set_title(f"Average Sparsity vs. Number of Scales")
-        ax[1].legend(fontsize=8)
+        Ks = sorted(atom_dict.keys())
+        ys = [np.mean(atom_dict[K]) for K in Ks]
+
+        plt.plot(Ks, ys, marker="o", label=laplacian)
+
+    plt.xlabel("Number of non-zero coefficients")
+    plt.ylabel("NMSE")
+    plt.yscale("log")
+    plt.grid(True, which="both", alpha=0.4)
+    plt.legend()
+    plt.title('NMSE vs Number of Non-Zero Coefficients (Sphere, Signal Compression)')
     plt.tight_layout()
-    plt.savefig(image_path, dpi=300, bbox_inches='tight')
-    plt.show()
-
-'''
-
-
-
-
-
-
-
-
-
-
-def plot_sparsity_vs_nmse(num_scales, sparsity_results, nmse_results, image_path, subtitle=None):
-    # Scatterplot of sparsity vs. nmse
-    fig, ax = plt.subplots(1,2, figsize=(15,5))
-    colors = {
-        'Connection': plt.cm.Reds(np.linspace(0.4, 1, len(num_scales))),
-        'Connection Normalized': plt.cm.Blues(np.linspace(0.4, 1, len(num_scales))),
-        'Trivial': plt.cm.Greens(np.linspace(0.4, 1, len(num_scales))),
-        'Trivial Normalized': plt.cm.Purples(np.linspace(0.4, 1, len(num_scales))),
-        'Sheaf': plt.cm.Greys(np.linspace(0.4, 1, len(num_scales)))
-    }
-    names = {
-        'Connection': 'Conn.',
-        'Connection Normalized': 'Conn. Norm.',
-        'Trivial': 'Trivial',
-        'Trivial Normalized': 'Trivial Norm.',
-        'Sheaf': 'Sheaf'
-    }
-    markers = {'Connection': 'o', 'Connection Normalized': '*', 'Trivial': 'X', 'Trivial Normalized': '^', 'Sheaf': 'X',}
-    for laplacian in ['Connection','Trivial']:
-        for l, num_scal in enumerate(num_scales):
-            ax[0].scatter(
-                sparsity_results[laplacian][num_scal], nmse_results[laplacian][num_scal],
-                color=colors[laplacian][l],
-                marker=markers[laplacian],
-                label=f"{names[laplacian]} with {num_scal} scales"
-            )
-            ax[0].set_xlabel("Sparsity")
-            ax[0].set_ylabel("NMSE")
-            if subtitle:
-                ax[0].set_title(f"Connection Laplacian vs. Trivial Laplacian\n{subtitle}")
-            else:
-                ax[0].set_title("Connection Laplacian vs. Trivial Laplacian")
-            ax[0].legend(fontsize=8)
-
-    for laplacian in ['Connection Normalized', 'Trivial Normalized']:
-        for l, num_scal in enumerate(num_scales):
-            ax[1].scatter(
-                sparsity_results[laplacian][num_scal], nmse_results[laplacian][num_scal],
-                color=colors[laplacian][l],
-                marker=markers[laplacian],
-                label=f"{names[laplacian]} with {num_scal} scales"
-            )
-            ax[1].set_xlabel("Sparsity")
-            ax[1].set_ylabel("NMSE")
-            if subtitle:
-                ax[1].set_title(f"Normalized Connection Laplacian vs. Normalized Trivial Laplacian\n{subtitle}")
-            else:
-                ax[1].set_title("Normalized Connection Laplacian vs. Normalized Trivial Laplacian")
-            #ax[1].set_xlim(0.0995,0.1015)
-            ax[1].legend(fontsize=8)
-    plt.tight_layout()
-    plt.savefig(image_path, dpi=300, bbox_inches='tight')
-    plt.show()
-    
-
-
-def plot_avg_results_vs_num_scales(num_scales, laplacians, sparsity_results, nmse_results, image_path, subtitle=None):
-    # Compute average sparsity and nmse for each laplacian and number of scales
-    cube_sparsity_avg = {
-        laplacian: {
-            num_scal: np.mean(sparsity_results[laplacian][num_scal])
-            for num_scal in num_scales
-        }
-        for laplacian in laplacians
-    }
-    cube_nmse_avg = {
-        laplacian: {
-            num_scal: np.mean(nmse_results[laplacian][num_scal])
-            for num_scal in num_scales
-        }
-        for laplacian in laplacians
-    }
-
-    # Plot nmse curves
-    fig, ax = plt.subplots(1,2, figsize=(15,5))
-    for laplacian in laplacians:
-        # NMSE vs. Number of Scales
-        ax[0].plot(num_scales, [y[1] for y in sorted(cube_nmse_avg[laplacian].items(), key=lambda x: x[0])],label=laplacian)
-        ax[0].set_xlabel("Number of scales")
-        ax[0].set_ylabel("Avg. NMSE")
-        if subtitle:
-            ax[0].set_title(f"Average NMSE vs. Number of Scales\n{subtitle}")
-        else:
-            ax[0].set_title(f"Average NMSE vs. Number of Scales")
-        ax[0].legend(fontsize=8)
-        # Sparsity vs. Number of Scales
-        ax[1].plot(num_scales, [y[1] for y in sorted(cube_sparsity_avg[laplacian].items(), key=lambda x: x[0])],label=laplacian)
-        ax[1].set_xlabel("Number of scales")
-        ax[1].set_ylabel("Avg. Sparsity")
-        if subtitle:
-            ax[1].set_title(f"Average Sparsity vs. Number of Scales\n{subtitle}")
-        else:
-            ax[1].set_title(f"Average Sparsity vs. Number of Scales")
-        ax[1].legend(fontsize=8)
-    plt.tight_layout()
-    plt.savefig(image_path, dpi=300, bbox_inches='tight')
-    plt.show()
-
-
-
-def plot_sparsity_vs_snr_rec(num_scales, sparsity_results, snr_rec_results, image_path, subtitle=None):
-    # Scatterplot of sparsity vs. nmse
-    fig, ax = plt.subplots(1,2, figsize=(15,5))
-    colors = {
-        'Connection': plt.cm.Reds(np.linspace(0.4, 1, len(num_scales))),
-        'Connection Normalized': plt.cm.Blues(np.linspace(0.4, 1, len(num_scales))),
-        'Trivial': plt.cm.Greens(np.linspace(0.4, 1, len(num_scales))),
-        'Trivial Normalized': plt.cm.Purples(np.linspace(0.4, 1, len(num_scales))),
-        'Sheaf': plt.cm.Greys(np.linspace(0.4, 1, len(num_scales)))
-    }
-    names = {
-        'Connection': 'Conn.',
-        'Connection Normalized': 'Conn. Norm.',
-        'Trivial': 'Trivial',
-        'Trivial Normalized': 'Trivial Norm.',
-        'Sheaf': 'Sheaf'
-    }
-    markers = {'Connection': 'o', 'Connection Normalized': '*', 'Trivial': 'X', 'Trivial Normalized': '^', 'Sheaf': 'X',}
-    for laplacian in ['Connection','Trivial']:
-        for l, num_scal in enumerate(num_scales):
-            ax[0].scatter(
-                sparsity_results[laplacian][num_scal], snr_rec_results[laplacian][num_scal],
-                color=colors[laplacian][l],
-                marker=markers[laplacian],
-                label=f"{names[laplacian]} with {num_scal} scales"
-            )
-            ax[0].set_xlabel("Sparsity")
-            ax[0].set_ylabel("Reconstruction SNR")
-            if subtitle:
-                ax[0].set_title(f"Connection Laplacian vs. Trivial Laplacian\n{subtitle}")
-            else:
-                ax[0].set_title("Connection Laplacian vs. Trivial Laplacian")
-            ax[0].legend(fontsize=8)
-
-    for laplacian in ['Connection Normalized', 'Trivial Normalized']:
-        for l, num_scal in enumerate(num_scales):
-            ax[1].scatter(
-                sparsity_results[laplacian][num_scal], snr_rec_results[laplacian][num_scal],
-                color=colors[laplacian][l],
-                marker=markers[laplacian],
-                label=f"{names[laplacian]} with {num_scal} scales"
-            )
-            ax[1].set_xlabel("Sparsity")
-            ax[1].set_ylabel("Reconstruction SNR")
-            if subtitle:
-                ax[1].set_title(f"Normalized Connection Laplacian vs. Normalized Trivial Laplacian\n{subtitle}")
-            else:
-                ax[1].set_title("Normalized Connection Laplacian vs. Normalized Trivial Laplacian")
-            #ax[1].set_xlim(0.0995,0.1015)
-            ax[1].legend(fontsize=8)
-    plt.tight_layout()
-    plt.savefig(image_path, dpi=300, bbox_inches='tight')
-    plt.show()
-
-def plot_sparsity_vs_gain(num_scales, sparsity_results, snr_rec_results, image_path, subtitle=None):
-    # Scatterplot of sparsity vs. nmse
-    fig, ax = plt.subplots(1,2, figsize=(15,5))
-    colors = {
-        'Connection': plt.cm.Reds(np.linspace(0.4, 1, len(num_scales))),
-        'Connection Normalized': plt.cm.Blues(np.linspace(0.4, 1, len(num_scales))),
-        'Trivial': plt.cm.Greens(np.linspace(0.4, 1, len(num_scales))),
-        'Trivial Normalized': plt.cm.Purples(np.linspace(0.4, 1, len(num_scales))),
-        'Sheaf': plt.cm.Greys(np.linspace(0.4, 1, len(num_scales)))
-    }
-    names = {
-        'Connection': 'Conn.',
-        'Connection Normalized': 'Conn. Norm.',
-        'Trivial': 'Trivial',
-        'Trivial Normalized': 'Trivial Norm.',
-        'Sheaf': 'Sheaf'
-    }
-    markers = {'Connection': 'o', 'Connection Normalized': '*', 'Trivial': 'X', 'Trivial Normalized': '^', 'Sheaf': 'X',}
-    for laplacian in ['Connection','Trivial']:
-        for l, num_scal in enumerate(num_scales):
-            ax[0].scatter(
-                sparsity_results[laplacian][num_scal], snr_rec_results[laplacian][num_scal],
-                color=colors[laplacian][l],
-                marker=markers[laplacian],
-                label=f"{names[laplacian]} with {num_scal} scales"
-            )
-            ax[0].set_xlabel("Sparsity")
-            ax[0].set_ylabel("Gain")
-            if subtitle:
-                ax[0].set_title(f"Connection Laplacian vs. Trivial Laplacian\n{subtitle}")
-            else:
-                ax[0].set_title("Connection Laplacian vs. Trivial Laplacian")
-            ax[0].legend(fontsize=8)
-
-    for laplacian in ['Connection Normalized', 'Trivial Normalized']:
-        for l, num_scal in enumerate(num_scales):
-            ax[1].scatter(
-                sparsity_results[laplacian][num_scal], snr_rec_results[laplacian][num_scal],
-                color=colors[laplacian][l],
-                marker=markers[laplacian],
-                label=f"{names[laplacian]} with {num_scal} scales"
-            )
-            ax[1].set_xlabel("Sparsity")
-            ax[1].set_ylabel("Gain")
-            if subtitle:
-                ax[1].set_title(f"Normalized Connection Laplacian vs. Normalized Trivial Laplacian\n{subtitle}")
-            else:
-                ax[1].set_title("Normalized Connection Laplacian vs. Normalized Trivial Laplacian")
-            #ax[1].set_xlim(0.0995,0.1015)
-            ax[1].legend(fontsize=8)
-    plt.tight_layout()
-    plt.savefig(image_path, dpi=300, bbox_inches='tight')
-    plt.show()
-
-
-def plot_avg_results_vs_num_scales2(num_scales, laplacians, snr_rec_results, gain_results, image_path, subtitle=None):
-    # Compute average sparsity and nmse for each laplacian and number of scales
-    cube_sparsity_avg = {
-        laplacian: {
-            num_scal: np.mean(snr_rec_results[laplacian][num_scal])
-            for num_scal in num_scales
-        }
-        for laplacian in laplacians
-    }
-    cube_nmse_avg = {
-        laplacian: {
-            num_scal: np.mean(gain_results[laplacian][num_scal])
-            for num_scal in num_scales
-        }
-        for laplacian in laplacians
-    }
-
-    # Plot nmse curves
-    fig, ax = plt.subplots(1,2, figsize=(15,5))
-    for laplacian in laplacians:
-        # NMSE vs. Number of Scales
-        ax[0].plot(num_scales, [y[1] for y in sorted(cube_nmse_avg[laplacian].items(), key=lambda x: x[0])],label=laplacian)
-        ax[0].set_xlabel("Number of scales")
-        ax[0].set_ylabel("Reconstruction SNR")
-        if subtitle:
-            ax[0].set_title(f"Average SNR vs. Number of Scales\n{subtitle}")
-        else:
-            ax[0].set_title(f"Average SNR vs. Number of Scales")
-        ax[0].legend(fontsize=8)
-        # Sparsity vs. Number of Scales
-        ax[1].plot(num_scales, [y[1] for y in sorted(cube_sparsity_avg[laplacian].items(), key=lambda x: x[0])],label=laplacian)
-        ax[1].set_xlabel("Number of scales")
-        ax[1].set_ylabel("Gain")
-        if subtitle:
-            ax[1].set_title(f"Average Gain vs. Number of Scales\n{subtitle}")
-        else:
-            ax[1].set_title(f"Average Gain vs. Number of Scales")
-        ax[1].legend(fontsize=8)
-    plt.tight_layout()
-    plt.savefig(image_path, dpi=300, bbox_inches='tight')
-    plt.show()
-
-
-
-
-
-
-
-
-
-
-
-
-
-def plot_avg_res_vs_num_scales(num_scales, laplacians, sparsity_results, nmse_results, image_path, subtitle=None):
-    # Compute average sparsity and nmse for each laplacian and number of scales
-    cube_sparsity_avg = {
-        laplacian: {
-            num_scal: np.mean(sparsity_results[laplacian][num_scal]*num_scal*600)
-            for num_scal in num_scales
-        }
-        for laplacian in laplacians
-    }
-    cube_nmse_avg = {
-        laplacian: {
-            num_scal: np.mean(nmse_results[laplacian][num_scal])
-            for num_scal in num_scales
-        }
-        for laplacian in laplacians
-    }
-
-    # Plot nmse curves
-    fig, ax = plt.subplots(1,2, figsize=(15,5))
-    for laplacian in laplacians:
-        # NMSE vs. Number of Scales
-        ax[0].plot(num_scales, [y[1] for y in sorted(cube_nmse_avg[laplacian].items(), key=lambda x: x[0])],label=laplacian, linestyle='-', marker='o')
-        ax[0].set_xlabel("Number of scales")
-        ax[0].set_ylabel("Avg. NMSE")
-        if subtitle:
-            ax[0].set_title(f"Average NMSE vs. Number of Scales\n{subtitle}")
-        else:
-            ax[0].set_title(f"Average NMSE vs. Number of Scales")
-        ax[0].legend(fontsize=8)
-        #ax[0].set_yscale('log')
-        ax[0].grid(True, which='major')
-        # Sparsity vs. Number of Scales
-        ax[1].plot(num_scales, [y[1] for y in sorted(cube_sparsity_avg[laplacian].items(), key=lambda x: x[0])],label=laplacian, linestyle='-', marker='o')
-        ax[1].set_xlabel("Number of scales")
-        ax[1].set_ylabel("Avg. num. atoms")
-        if subtitle:
-            ax[1].set_title(f"Average Number of Atoms vs. Number of Scales\n{subtitle}")
-        else:
-            ax[1].set_title(f"Average Number of Atoms vs. Number of Scales")
-        ax[1].legend(fontsize=8)
-        #ax[1].set_yscale('log')
-        ax[1].grid(True, which='major')
-    plt.tight_layout()
-    plt.savefig(image_path, dpi=300, bbox_inches='tight')
     plt.show()
