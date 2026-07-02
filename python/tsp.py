@@ -262,11 +262,9 @@ def signal_compression_exp(point_cloud, hyperparameters):
     '''
     Function that takes in input a point cloud and a dictionary of hyperparameters and performs signal compression experiment 3 on the data
     Returns:
-    - sparsity_results
     - nmse_results
     '''
     # Initialize result dictionaries
-    #sparsity_results = defaultdict(dict)
     nmse_results = defaultdict(dict)
 
     # Hyperparameters
@@ -282,62 +280,32 @@ def signal_compression_exp(point_cloud, hyperparameters):
     num_atoms = hyperparameters['num_atoms']
     len_scale=10
 
-    ###
-    #print('Experiment 3 running')
-    ###
-
-    Tsp_signal = TSP(
-        point_cloud,
-        eps=eps,
-        eps_pca=eps_pca,
-        k=k,
-        laplacian_code=laplacians[0],
-        gamma=gamma
-    )
-
-    signals, cov, signals_GT = Tsp_signal.generate_kraichnan_signals(
-        num_signals=num_signals,
-        len_scale=len_scale,
-        SEED=SEED
-    )
+    # Create TSP object just to create signals
+    Tsp_signal = TSP(point_cloud,eps=eps,eps_pca=eps_pca,k=k,laplacian_code=laplacians[0],gamma=gamma)
+    # Generate kraichnan signals with gstools
+    signals, cov, signals_GT = Tsp_signal.generate_kraichnan_signals(num_signals=num_signals, len_scale=len_scale, SEED=SEED)
 
     for laplacian in laplacians:
-
-        #print(f'Laplacian: {laplacian}')
 
         # Create TSP (topological signal processing) object
         Tsp = TSP(point_cloud, eps=eps, eps_pca=eps_pca, k=k, laplacian_code=laplacian, gamma=gamma)
 
         for num_scal in num_scales[::-1]:
             
-            ###
-            #print(f'Number of scales: {num_scal}')
-            #print(f'Scales: {[2**(j-num_scal//2) for j in range(num_scal)]}')
-            ###
-
             # Create dictionary
             dictionary = Tsp.create_dictionary(scales=[2**(j-num_scal//2) for j in range(num_scal)], normalize=False, adjust_kernel=adjust_kernel)
 
-            #if num_scal == num_scales[-1]:
-                # Generate signals for the corresponding laplacian and dictionary
-            #    signals, cov, signals_GT = Tsp.generate_geometric_signals(num_signals=num_signals, SEED=SEED)
-
             sparse_signals = dict()
-            sparsity = dict()
-
             nmse = dict()
 
             for num in num_atoms:
+                # Compute sparse signals
                 sparse_signals[num] = Tsp.sparsify_signals(signals, dictionary, num)
-
-                #sparsity[num] = Tsp.compute_sparsity(sparse_signals[num])
-
+                # Compute NMSE
                 nmse[num] = Tsp.compute_NMSE(signals, sparse_signals[num],dictionary)
 
-            #sparsity_results[laplacian][num_scal] = sparsity
             nmse_results[laplacian][num_scal] = nmse
 
-    #return sparsity_results, nmse_results
     return nmse_results
 
 
@@ -346,51 +314,46 @@ def signal_compression(point_cloud, hyperparameters, signals):
     '''
     Function that takes in input a point cloud and a dictionary of hyperparameters and performs signal compression experiment 3 on the data
     Returns:
-    - sparsity_results
     - nmse_results
     '''
-    # Initialize result dictionaries
-    sparsity_results = defaultdict(dict)
+    # Initialize result dictionary
     nmse_results = defaultdict(dict)
+
     # Hyperparameters
     num_scales = hyperparameters['num_scales']
     laplacians = hyperparameters['laplacians']
+    num_signals = hyperparameters['num_signals']
     eps = hyperparameters['eps']
     eps_pca = hyperparameters['eps_pca']
     k = hyperparameters['k']
     gamma = hyperparameters['gamma']
     SEED = hyperparameters['SEED']
-    h = hyperparameters['h']
-    t = hyperparameters['t']
-    p = hyperparameters['p']
-    normalize = hyperparameters['normalize']
     adjust_kernel = hyperparameters['adjust_kernel']
+    num_atoms = hyperparameters['num_atoms']
+    len_scale=10
+
 
     for laplacian in laplacians:
 
         # Create TSP (topological signal processing) object
-        Tsp = TSP(point_cloud, eps=eps, eps_pca=eps_pca, k=k, laplacian_code=laplacian, gamma=gamma, h=h, t=t, p=p)
+        Tsp = TSP(point_cloud, eps=eps, eps_pca=eps_pca, k=k, laplacian_code=laplacian, gamma=gamma)
 
-        for num_scal in num_scales:
+        for num_scal in num_scales[::-1]:
+
             # Create dictionary
-            dictionary = Tsp.create_dictionary(scales=[2**(j-num_scal//2) for j in range(num_scal)], normalize=normalize, adjust_kernel=adjust_kernel)
-            
-            #print(f"Inside Signal Compression Function: Number of NaN values in dictionary: {np.isnan(dictionary).sum()}")
+            dictionary = Tsp.create_dictionary(scales=[2**(j-num_scal//2) for j in range(num_scal)], normalize=False, adjust_kernel=adjust_kernel)
 
-            # Sparsify signals
-            sparse_signals = Tsp.sparsify_signals(signals, dictionary)
+            sparse_signals = dict()
 
-            # Compute sparsity
-            sparsity =  Tsp.compute_sparsity(sparse_signals)
-            
-            # Compute NMSE
-            nmse = Tsp.compute_NMSE(signals, sparse_signals, dictionary)
+            nmse = dict()
 
-            # Add sparsity and NMSE to the dictionaries
-            sparsity_results[laplacian][num_scal] = sparsity
+            for num in num_atoms:
+                sparse_signals[num] = Tsp.sparsify_signals(signals, dictionary, num)
+                nmse[num] = Tsp.compute_NMSE(signals, sparse_signals[num],dictionary)
+
             nmse_results[laplacian][num_scal] = nmse
 
-    return sparsity_results, nmse_results
+    return nmse_results
 
 
 
@@ -411,13 +374,11 @@ def add_noise(signal, SNR):
 
 def signal_denoising_exp(point_cloud, hyperparameters):
     '''
-    Function that takes in input a point cloud and a dictionary of hyperparameters and performs signal compression experiment 3 on the data
+    Function that takes in input a point cloud and a dictionary of hyperparameters and performs signal denoising
     Returns:
-    - sparsity_results
     - nmse_results
     '''
-    # Initialize result dictionaries
-    #sparsity_results = defaultdict(dict)
+    # Initialize result dictionary
     nmse_results = defaultdict(dict)
 
     # Hyperparameters
@@ -435,10 +396,6 @@ def signal_denoising_exp(point_cloud, hyperparameters):
     len_scale=10
     normalize = hyperparameters['normalize']
 
-    ###
-    #print('Experiment 3 running')
-    ###
-
     Tsp_signal = TSP(point_cloud, eps=eps, eps_pca=eps_pca, k=k, laplacian_code=laplacians[0], gamma=gamma)
 
     signals, cov, signals_GT = Tsp_signal.generate_kraichnan_signals(num_signals=num_signals, len_scale=len_scale,SEED=SEED)
@@ -447,42 +404,27 @@ def signal_denoising_exp(point_cloud, hyperparameters):
 
     for laplacian in laplacians:
 
-        #print(f'Laplacian: {laplacian}')
-
         # Create TSP (topological signal processing) object
         Tsp = TSP(point_cloud, eps=eps, eps_pca=eps_pca, k=k, laplacian_code=laplacian, gamma=gamma)
 
         for num_scal in num_scales[::-1]:
-            
-            ###
-            #print(f'Number of scales: {num_scal}')
-            #print(f'Scales: {[2**(j-num_scal//2) for j in range(num_scal)]}')
-            ###
 
             # Create dictionary
             dictionary = Tsp.create_dictionary(scales=[2**(j-num_scal//2) for j in range(num_scal)], normalize=normalize, adjust_kernel=adjust_kernel)
-
-            #if num_scal == num_scales[-1]:
-                # Generate signals for the corresponding laplacian and dictionary
-            #    signals, cov, signals_GT = Tsp.generate_geometric_signals(num_signals=num_signals, SEED=SEED)
-
+            
             sparse_signals = dict()
-            sparsity = dict()
-
             nmse = dict()
 
             for num in num_atoms:
                 sparse_signals[num] = Tsp.sparsify_signals(signals, dictionary, num)
-
-                #sparsity[num] = Tsp.compute_sparsity(sparse_signals[num])
-
                 nmse[num] = Tsp.compute_NMSE(signals_GT, sparse_signals[num],dictionary)
 
-            #sparsity_results[laplacian][num_scal] = sparsity
             nmse_results[laplacian][num_scal] = nmse
 
-    #return sparsity_results, nmse_results
     return nmse_results
+
+
+
 
 
 
@@ -490,67 +432,50 @@ def signal_denoising(point_cloud, hyperparameters, gt_signals):
     '''
     Function that takes in input a point cloud and a dictionary of hyperparameters and performs signal compression experiment 3 on the data
     Returns:
-    - sparsity_results
     - nmse_results
     '''
     # Initialize result dictionaries
-    sparsity_results = defaultdict(dict)
     nmse_results = defaultdict(dict)
-    snr_rec_results = defaultdict(dict)
-    snr_gain_results = defaultdict(dict)
 
     # Hyperparameters
     num_scales = hyperparameters['num_scales']
     laplacians = hyperparameters['laplacians']
+    num_signals = hyperparameters['num_signals']
     eps = hyperparameters['eps']
     eps_pca = hyperparameters['eps_pca']
     k = hyperparameters['k']
     gamma = hyperparameters['gamma']
     SEED = hyperparameters['SEED']
-    h = hyperparameters['h']
-    t = hyperparameters['t']
-    p = hyperparameters['p']
-    normalize = hyperparameters['normalize']
     adjust_kernel = hyperparameters['adjust_kernel']
+    num_atoms = hyperparameters['num_atoms']
     SNR = hyperparameters['SNR']
+    len_scale=10
+    normalize = hyperparameters['normalize']
 
-    # Add noise
     signals = add_noise(gt_signals, SNR)
 
     for laplacian in laplacians:
 
         # Create TSP (topological signal processing) object
-        Tsp = TSP(point_cloud, eps=eps, eps_pca=eps_pca, k=k, laplacian_code=laplacian, gamma=gamma, h=h, t=t, p=p)
+        Tsp = TSP(point_cloud, eps=eps, eps_pca=eps_pca, k=k, laplacian_code=laplacian, gamma=gamma)
 
-        for num_scal in num_scales:
+        for num_scal in num_scales[::-1]:
+
             # Create dictionary
             dictionary = Tsp.create_dictionary(scales=[2**(j-num_scal//2) for j in range(num_scal)], normalize=normalize, adjust_kernel=adjust_kernel)
-            
-            # Sparsify signals
-            sparse_signals = Tsp.sparsify_signals(signals, dictionary)
 
-            # Compute sparsity
-            sparsity =  Tsp.compute_sparsity(sparse_signals)
-            
-            # Compute NMSE
-            nmse = Tsp.compute_NMSE(gt_signals, sparse_signals, dictionary)
+            sparse_signals = dict()
+            nmse = dict()
 
-            # Reconstruct signals
-            reconstructed_signals = Tsp.reconstruct_signals(sparse_signals, dictionary)
+            for num in num_atoms:
+                # Sparsify signals
+                sparse_signals[num] = Tsp.sparsify_signals(signals, dictionary, num)
+                # Compute NMSE
+                nmse[num] = Tsp.compute_NMSE(gt_signals, sparse_signals[num],dictionary)
 
-            # Compute Reconstruction SNR
-            SNR_rec = Tsp.compute_snr_rec(gt_signals, reconstructed_signals)
-
-            # Compute SNR Gain
-            SNR_gain = Tsp.compute_snr_gain(SNR_rec, SNR)
-
-            # Add results to the dictionaries
-            sparsity_results[laplacian][num_scal] = sparsity
             nmse_results[laplacian][num_scal] = nmse
-            snr_rec_results[laplacian][num_scal] = SNR_rec
-            snr_gain_results[laplacian][num_scal] = SNR_gain
 
-    return sparsity_results, nmse_results, snr_rec_results, snr_gain_results
+    return nmse_results
 
 
 
