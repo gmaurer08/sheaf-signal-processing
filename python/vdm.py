@@ -535,6 +535,7 @@ class VDM:
         '''
         Function that approximates the connection laplacian of the graph, computing D^-1 @ S - I,
         where D is the kronecker degree matrix D, S the alignment block matrix and I the identity matrix dN x dN
+        Note: IT RETURNS THE NEGATIVE NORMALIZED CONNECTION LAPLATIAN
         '''
         self._ensure_alignment_block_matrix()
         self._ensure_dim()
@@ -543,13 +544,14 @@ class VDM:
         degree_matrix_dN_x_dN = self.get_kron_degree_matrix()
         # Compute the connection laplacian
         conn_laplacian = np.linalg.inv(degree_matrix_dN_x_dN) @ block_matrix_S - np.eye(self.dim * self.N)
-        return conn_laplacian
+        return -conn_laplacian
     
     # Function that approximates the connection laplacian
     def connection_laplacian(self):
         '''
         Function that approximates the connection laplacian of the graph, computing S - D,
         where D is the kronecker degree matrix D, S the alignment block matrix and I the identity matrix dN x dN
+        Note: IT RETURNS THE NEGATIVE CONNECTION LAPLATIAN
         '''
         self._ensure_alignment_block_matrix()
         self._ensure_dim()
@@ -558,7 +560,7 @@ class VDM:
         degree_matrix_dN_x_dN = self.get_kron_degree_matrix()
         # Compute the connection laplacian
         conn_laplacian = block_matrix_S - degree_matrix_dN_x_dN
-        return conn_laplacian
+        return -conn_laplacian
     
     # Function that computes the trivial laplacian
     def trivial_laplacian(self):

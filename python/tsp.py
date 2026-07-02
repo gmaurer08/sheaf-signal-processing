@@ -126,50 +126,28 @@ class TSP(VDM):
     # Signal Compression + Denoising Functions
     ################################################################
 
-    def generate_kraichnan_signals(
-        self,
-        num_signals=500,
-        Sigma=None,
-        len_scale=10,
-        SEED=42):
-        """
-        Generate tangent bundle signals using GSTools.
-
-        Parameters
-        ----------
-        num_signals : int
-            Number of random fields to generate.
-
-        Sigma : ndarray, optional
-            3x3 covariance between vector components.
-
-        len_scale : float
-            Spatial correlation length.
-
-        SEED : int
-            Random seed.
-
-        Returns
-        -------
-        X : ndarray
-            Tangent bundle signals (2N x num_signals)
-
-        covariance : ndarray
-            Empirical covariance matrix
-
-        X_GT : ndarray
-            Ground truth signals
-        """
+    def generate_kraichnan_signals(self, num_signals=500, Sigma=None, len_scale=10, SEED=42):
+        '''
+        Generate Kraichnan signals
+        num_signals (int): number of random fields to generate
+        Sigma (ndarray, optional): 3x3 covariance between vector components
+        len_scale (float): spatial correlation length
+        SEED (int): random seed.
+        Outputs:
+        X (ndarray): tangent bundle signals (2N x num_signals)
+        covariance (ndarray): empirical covariance matrix
+        X_GT (ndarray): ground truth signals
+        '''
 
         N = self.data.shape[0]
 
-        self._ensure_wav_object()
+        #self._ensure_wav_object()
         self._ensure_orthonormal_bases()
 
         O = self.orthonormal_bases
 
-        dummy_X = np.zeros((2 * N, num_signals))
-        dummy_cov = np.zeros((2 * N, 2 * N))
+        dummy_X = np.zeros((2*N, num_signals))
+        dummy_cov = np.zeros((2*N, 2*N))
 
         sample = CochainSample(
             X=dummy_X,
@@ -180,12 +158,7 @@ class TSP(VDM):
             V=N,
         )
 
-        sampled = sample.random_tangent_bundle_signals(
-            Sigma=Sigma,
-            len_scale=len_scale,
-            M=num_signals,
-            seed=SEED,
-        )
+        sampled = sample.random_tangent_bundle_signals(Sigma=Sigma, len_scale=len_scale, M=num_signals, seed=SEED)
 
         return sampled.X, sampled.covariance, sampled.X_GT
         
@@ -436,6 +409,83 @@ def add_noise(signal, SNR):
 
 
 
+def signal_denoising_exp(point_cloud, hyperparameters):
+    '''
+    Function that takes in input a point cloud and a dictionary of hyperparameters and performs signal compression experiment 3 on the data
+    Returns:
+    - sparsity_results
+    - nmse_results
+    '''
+    # Initialize result dictionaries
+    #sparsity_results = defaultdict(dict)
+    nmse_results = defaultdict(dict)
+
+    # Hyperparameters
+    num_scales = hyperparameters['num_scales']
+    laplacians = hyperparameters['laplacians']
+    num_signals = hyperparameters['num_signals']
+    eps = hyperparameters['eps']
+    eps_pca = hyperparameters['eps_pca']
+    k = hyperparameters['k']
+    gamma = hyperparameters['gamma']
+    SEED = hyperparameters['SEED']
+    adjust_kernel = hyperparameters['adjust_kernel']
+    num_atoms = hyperparameters['num_atoms']
+    SNR = hyperparameters['SNR']
+    len_scale=10
+    normalize = hyperparameters['normalize']
+
+    ###
+    #print('Experiment 3 running')
+    ###
+
+    Tsp_signal = TSP(point_cloud, eps=eps, eps_pca=eps_pca, k=k, laplacian_code=laplacians[0], gamma=gamma)
+
+    signals, cov, signals_GT = Tsp_signal.generate_kraichnan_signals(num_signals=num_signals, len_scale=len_scale,SEED=SEED)
+
+    signals = add_noise(signals_GT, SNR)
+
+    for laplacian in laplacians:
+
+        #print(f'Laplacian: {laplacian}')
+
+        # Create TSP (topological signal processing) object
+        Tsp = TSP(point_cloud, eps=eps, eps_pca=eps_pca, k=k, laplacian_code=laplacian, gamma=gamma)
+
+        for num_scal in num_scales[::-1]:
+            
+            ###
+            #print(f'Number of scales: {num_scal}')
+            #print(f'Scales: {[2**(j-num_scal//2) for j in range(num_scal)]}')
+            ###
+
+            # Create dictionary
+            dictionary = Tsp.create_dictionary(scales=[2**(j-num_scal//2) for j in range(num_scal)], normalize=normalize, adjust_kernel=adjust_kernel)
+
+            #if num_scal == num_scales[-1]:
+                # Generate signals for the corresponding laplacian and dictionary
+            #    signals, cov, signals_GT = Tsp.generate_geometric_signals(num_signals=num_signals, SEED=SEED)
+
+            sparse_signals = dict()
+            sparsity = dict()
+
+            nmse = dict()
+
+            for num in num_atoms:
+                sparse_signals[num] = Tsp.sparsify_signals(signals, dictionary, num)
+
+                #sparsity[num] = Tsp.compute_sparsity(sparse_signals[num])
+
+                nmse[num] = Tsp.compute_NMSE(signals_GT, sparse_signals[num],dictionary)
+
+            #sparsity_results[laplacian][num_scal] = sparsity
+            nmse_results[laplacian][num_scal] = nmse
+
+    #return sparsity_results, nmse_results
+    return nmse_results
+
+
+
 def signal_denoising(point_cloud, hyperparameters, gt_signals):
     '''
     Function that takes in input a point cloud and a dictionary of hyperparameters and performs signal compression experiment 3 on the data
@@ -510,7 +560,7 @@ def signal_denoising(point_cloud, hyperparameters, gt_signals):
 
 
 
-def plot_nmse(nmse_results, scale=3):
+def plot_nmse(nmse_results, scale=3, subtitle=''):
 
     plt.figure(figsize=(7, 5))
 
@@ -531,6 +581,6 @@ def plot_nmse(nmse_results, scale=3):
     plt.yscale("log")
     plt.grid(True, which="both", alpha=0.4)
     plt.legend()
-    plt.title('NMSE vs Number of Non-Zero Coefficients (Sphere, Signal Compression)')
+    plt.title('NMSE vs Number of Non-Zero Coefficients' + '\n' + subtitle)
     plt.tight_layout()
     plt.show()
