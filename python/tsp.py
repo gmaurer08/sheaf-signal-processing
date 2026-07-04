@@ -379,7 +379,9 @@ def signal_denoising_exp(point_cloud, hyperparameters):
     - nmse_results
     '''
     # Initialize result dictionary
-    nmse_results = defaultdict(dict)
+    nmse_results = nmse_results = defaultdict(lambda: defaultdict(lambda: defaultdict(dict)))
+
+    # nmse_results[laplacian][num_scal][snr][num_atoms]
 
     # Hyperparameters
     num_scales = hyperparameters['num_scales']
@@ -400,8 +402,6 @@ def signal_denoising_exp(point_cloud, hyperparameters):
 
     signals, cov, signals_GT = Tsp_signal.generate_kraichnan_signals(num_signals=num_signals, len_scale=len_scale,SEED=SEED)
 
-    signals = add_noise(signals_GT, SNR)
-
     for laplacian in laplacians:
 
         # Create TSP (topological signal processing) object
@@ -412,14 +412,14 @@ def signal_denoising_exp(point_cloud, hyperparameters):
             # Create dictionary
             dictionary = Tsp.create_dictionary(scales=[2**(j-num_scal//2) for j in range(num_scal)], normalize=normalize, adjust_kernel=adjust_kernel)
             
-            sparse_signals = dict()
-            nmse = dict()
+            for snr in SNR:
+                signals = add_noise(signals_GT, snr)
 
-            for num in num_atoms:
-                sparse_signals[num] = Tsp.sparsify_signals(signals, dictionary, num)
-                nmse[num] = Tsp.compute_NMSE(signals_GT, sparse_signals[num],dictionary)
+                for num in num_atoms:
+                    sparse_signals = Tsp.sparsify_signals(signals, dictionary, num)
+                    nmse = Tsp.compute_NMSE(signals_GT, sparse_signals,dictionary)
 
-            nmse_results[laplacian][num_scal] = nmse
+                    nmse_results[laplacian][num_scal][snr][num] = nmse
 
     return nmse_results
 
@@ -452,8 +452,6 @@ def signal_denoising(point_cloud, hyperparameters, gt_signals):
     len_scale=10
     normalize = hyperparameters['normalize']
 
-    signals = add_noise(gt_signals, SNR)
-
     for laplacian in laplacians:
 
         # Create TSP (topological signal processing) object
@@ -463,17 +461,15 @@ def signal_denoising(point_cloud, hyperparameters, gt_signals):
 
             # Create dictionary
             dictionary = Tsp.create_dictionary(scales=[2**(j-num_scal//2) for j in range(num_scal)], normalize=normalize, adjust_kernel=adjust_kernel)
+            
+            for snr in SNR:
+                signals = add_noise(gt_signals, snr)
 
-            sparse_signals = dict()
-            nmse = dict()
+                for num in num_atoms:
+                    sparse_signals = Tsp.sparsify_signals(signals, dictionary, num)
+                    nmse = Tsp.compute_NMSE(gt_signals, sparse_signals, dictionary)
 
-            for num in num_atoms:
-                # Sparsify signals
-                sparse_signals[num] = Tsp.sparsify_signals(signals, dictionary, num)
-                # Compute NMSE
-                nmse[num] = Tsp.compute_NMSE(gt_signals, sparse_signals[num],dictionary)
-
-            nmse_results[laplacian][num_scal] = nmse
+                    nmse_results[laplacian][num_scal][snr][num] = nmse
 
     return nmse_results
 
@@ -484,7 +480,7 @@ def signal_denoising(point_cloud, hyperparameters, gt_signals):
 ############################################################################################################
 
 
-
+"""
 def plot_nmse(nmse_results, scale=3, subtitle=''):
 
     plt.figure(figsize=(7, 5))
@@ -498,6 +494,7 @@ def plot_nmse(nmse_results, scale=3, subtitle=''):
 
         Ks = sorted(atom_dict.keys())
         ys = [np.mean(atom_dict[K]) for K in Ks]
+        stds = [np.std(atom_dict[K]) for K in Ks]
 
         plt.plot(Ks, ys, marker="o", label=laplacian)
 
@@ -507,5 +504,120 @@ def plot_nmse(nmse_results, scale=3, subtitle=''):
     plt.grid(True, which="both", alpha=0.4)
     plt.legend()
     plt.title('NMSE vs Number of Non-Zero Coefficients' + '\n' + subtitle)
+    plt.tight_layout()
+    plt.show()
+"""
+
+
+def plot_nmse(nmse_results, scale=3, subtitle=''):
+
+    plt.figure(figsize=(7, 5))
+
+    for laplacian in nmse_results:
+
+        if laplacian == 'Sheaf':
+            continue
+
+        atom_dict = nmse_results[laplacian][scale]
+
+        Ks = sorted(atom_dict.keys())
+
+        ys = []
+        ci = []
+
+        for K in Ks:
+            vals = np.asarray(atom_dict[K])
+
+            mean = np.mean(vals)
+            std = np.std(vals, ddof=1)
+            n = len(vals)
+
+            ys.append(mean)
+            ci.append(1.96 * std / np.sqrt(n))
+
+        ys = np.array(ys)
+        ci = np.array(ci)
+
+        plt.plot(Ks, ys, marker='o', label=laplacian)
+        plt.fill_between(Ks, ys - ci, ys + ci, alpha=0.2)
+
+    plt.xlabel("Number of non-zero coefficients")
+    plt.ylabel("NMSE")
+    plt.yscale("log")
+    plt.grid(True, which="both", alpha=0.4)
+    plt.legend()
+    plt.title("NMSE vs Number of Non-Zero Coefficients\n" + subtitle)
+    plt.tight_layout()
+    plt.show()
+
+
+
+from scipy.stats import t
+
+def plot_nmse_snr(nmse_results, scale=3, num_atoms=50, subtitle='', confidence=True):
+
+    plt.figure(figsize=(7,5))
+
+    for laplacian in nmse_results:
+
+        if laplacian == 'Sheaf':
+            continue
+
+        snr_dict = nmse_results[laplacian][scale]
+
+        SNRs = sorted(snr_dict.keys())
+
+        ys = []
+        ci = []
+
+        for snr in SNRs:
+
+            vals = np.asarray(snr_dict[snr][num_atoms])
+
+            mean = np.mean(vals)
+            ys.append(mean)
+
+            if confidence:
+                n = len(vals)
+                std = np.std(vals, ddof=1)
+
+                if n > 1:
+                    t_value = t.ppf(0.975, df=n-1)
+                    ci.append(t_value * std / np.sqrt(n))
+                else:
+                    ci.append(0)
+
+        ys = np.asarray(ys)
+
+        plt.plot(
+            SNRs,
+            ys,
+            marker='o',
+            label=laplacian
+        )
+
+        if confidence:
+            ci = np.asarray(ci)
+            plt.fill_between(
+                SNRs,
+                ys - ci,
+                ys + ci,
+                alpha=0.2
+            )
+
+    plt.xscale('log')          # SNR values span several orders of magnitude
+    plt.yscale('log')          # NMSE is usually plotted logarithmically
+
+    plt.xlabel("Input SNR")
+    plt.ylabel("NMSE")
+    plt.grid(True, which="both", alpha=0.4)
+    plt.legend()
+
+    plt.title(
+        f"NMSE vs Input SNR\n"
+        f"Scale = {scale}, Atoms = {num_atoms}\n"
+        + subtitle
+    )
+
     plt.tight_layout()
     plt.show()
