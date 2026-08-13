@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from collections import defaultdict
 
 # Function that computes a Fibonacci Sphere
 def fibonacci_sphere(N):
@@ -102,3 +103,12 @@ def wind_uv_to_xyz(u, v, lat_deg, lon_deg):
     wind_xyz = u * e_E + v * e_N
 
     return wind_xyz
+
+
+# Function that turns a defaultdict into a dictionary
+def dictify(d):
+    if isinstance(d, defaultdict):
+        d = {k: dictify(v) for k, v in d.items()}
+    elif isinstance(d, dict):
+        d = {k: dictify(v) for k, v in d.items()}
+    return d
