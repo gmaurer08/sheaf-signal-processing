@@ -322,7 +322,7 @@ def signal_compression(point_cloud, hyperparameters, signals):
     # Hyperparameters
     num_scales = hyperparameters['num_scales']
     laplacians = hyperparameters['laplacians']
-    num_signals = hyperparameters['num_signals']
+    #num_signals = hyperparameters['num_signals']
     eps = hyperparameters['eps']
     eps_pca = hyperparameters['eps_pca']
     k = hyperparameters['k']
@@ -342,9 +342,7 @@ def signal_compression(point_cloud, hyperparameters, signals):
 
             # Create dictionary
             dictionary = Tsp.create_dictionary(scales=[2**(j-num_scal//2) for j in range(num_scal)], normalize=False, adjust_kernel=adjust_kernel)
-
             sparse_signals = dict()
-
             nmse = dict()
 
             for num in num_atoms:
@@ -440,7 +438,7 @@ def signal_denoising(point_cloud, hyperparameters, gt_signals):
     # Hyperparameters
     num_scales = hyperparameters['num_scales']
     laplacians = hyperparameters['laplacians']
-    num_signals = hyperparameters['num_signals']
+    #num_signals = hyperparameters['num_signals']
     eps = hyperparameters['eps']
     eps_pca = hyperparameters['eps_pca']
     k = hyperparameters['k']
@@ -457,7 +455,9 @@ def signal_denoising(point_cloud, hyperparameters, gt_signals):
         # Create TSP (topological signal processing) object
         Tsp = TSP(point_cloud, eps=eps, eps_pca=eps_pca, k=k, laplacian_code=laplacian, gamma=gamma)
 
-        for num_scal in num_scales[::-1]:
+        for num_scal in reversed(num_scales):
+
+            nmse_results[laplacian][num_scal] = defaultdict(dict)
 
             # Create dictionary
             dictionary = Tsp.create_dictionary(scales=[2**(j-num_scal//2) for j in range(num_scal)], normalize=normalize, adjust_kernel=adjust_kernel)

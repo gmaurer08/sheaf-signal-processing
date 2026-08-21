@@ -1,6 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from collections import defaultdict
+from python.tsp import TSP
+from tqdm import tqdm
 
 # Function that computes a Fibonacci Sphere
 def fibonacci_sphere(N):
@@ -112,3 +114,23 @@ def dictify(d):
     elif isinstance(d, dict):
         d = {k: dictify(v) for k, v in d.items()}
     return d
+
+
+# function to find the best eps and eps_pca
+def find_best_eps_eps_pca(points, eps_list, eps_pca_list, k, gamma):
+    working_tuples = []
+    for i, eps in tqdm(enumerate(eps_list)):
+        for j, eps_pca in tqdm(enumerate(eps_pca_list[:i])):
+            try:
+                obj = TSP(points, eps=eps, eps_pca=eps_pca, k=k, gamma=gamma)
+                dim = obj.estimate_dim()
+                if dim==2:
+                    working_tuples.append((eps, eps_pca))
+            except Exception as e:
+                #print('failed for eps:', eps, 'and eps_pca:', eps_pca)
+                #raise
+                pass
+    # find best tuple with min eps, min eps_pca
+    #print(working_tuples)
+    best_tuple = min(working_tuples, key=lambda x: (x[0], x[1]))
+    return best_tuple
