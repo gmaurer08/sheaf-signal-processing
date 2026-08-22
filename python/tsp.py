@@ -284,6 +284,7 @@ def signal_compression_exp(point_cloud, hyperparameters):
     Tsp_signal = TSP(point_cloud,eps=eps,eps_pca=eps_pca,k=k,laplacian_code=laplacians[0],gamma=gamma)
     # Generate kraichnan signals with gstools
     signals, cov, signals_GT = Tsp_signal.generate_kraichnan_signals(num_signals=num_signals, len_scale=len_scale, SEED=SEED)
+    #print(signals)
 
     for laplacian in laplacians:
 
