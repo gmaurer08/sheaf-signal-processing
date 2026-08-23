@@ -134,3 +134,383 @@ def find_best_eps_eps_pca(points, eps_list, eps_pca_list, k, gamma):
     #print(working_tuples)
     best_tuple = min(working_tuples, key=lambda x: (x[0], x[1]))
     return best_tuple
+
+
+
+
+###############################
+
+###### Interactive Plot
+
+
+import pickle
+import numpy as np
+import plotly.graph_objects as go
+import ipywidgets as widgets
+from IPython.display import display
+from scipy.stats import t
+
+
+clouds = ['cube', 'sphere', 'wind', 'era5']
+kernels = ['default', 'adjusted']
+parameters = {
+    'cube': ['eps_0.1_eps_pca_0.05','eps_0.04_eps_pca_0.03'],
+    'sphere': ['eps_0.1_eps_pca_0.05','eps_0.05_eps_pca_0.04'],
+    'wind': ['eps_1.5e9_eps_pca_1e9','eps_1.2e9_eps_pca_8.6e8'],
+    'era5': ['eps_0.035_eps_pca_0.03']
+}
+laplacians = ['Connection','Connection Normalized','Trivial', 'Trivial Normalized','Sheaf']
+
+def load_nmse_results(cloud, task, kernel, parameter):
+    """
+    Load one NMSE pickle file.
+    """
+    file_path = (
+        f'res/{cloud}/{parameter}/'
+        f'{task}_{kernel}_kernel_nmse.pkl'
+    )
+
+    with open(file_path, 'rb') as f:
+        return pickle.load(f)
+
+
+def interactive_compression_plot():
+
+    # WIDGETS
+    cloud_widget = widgets.Dropdown(options=clouds,value=clouds[0],description='Dataset:')
+    parameter_widget = widgets.Dropdown(options=parameters[clouds[0]],value=parameters[clouds[0]][0],description='Parameter:')
+    kernel_widget = widgets.Dropdown(options=kernels,value=kernels[0],description='Kernel:')
+
+    # Cube is the initial dataset, so start with 2–7
+    scale_widget = widgets.Dropdown(options=list(range(2, 8)), value=3, description='Scales:')
+    laplacian_widgets = {lap: widgets.Checkbox(value=(lap != 'Sheaf'),description=lap,indent=False) for lap in laplacians}
+
+    # Update parameters and scales when dataset changes
+    def update_parameters(change):
+
+        new_cloud = change['new']
+
+        # Update parameter choices
+        parameter_widget.options = parameters[new_cloud]
+        parameter_widget.value = parameters[new_cloud][0]
+
+        # Update scale choices
+        if new_cloud in ['cube', 'sphere']:
+            scale_widget.options = list(range(2, 8))   # 2–7
+        else:
+            scale_widget.options = list(range(2, 10))  # 2–9
+
+        # Make sure current scale is valid
+        if scale_widget.value not in scale_widget.options:
+            scale_widget.value = scale_widget.options[0]
+
+    cloud_widget.observe(update_parameters, names='value')
+
+    # PLOT
+    output = widgets.Output()
+
+    def update_plot(*args):
+
+        with output:
+
+            output.clear_output(wait=True)
+
+            cloud = cloud_widget.value
+            parameter = parameter_widget.value
+            kernel = kernel_widget.value
+            scale = scale_widget.value
+
+            selected_laplacians = [
+                lap for lap, widget in laplacian_widgets.items()
+                if widget.value
+            ]
+
+            # Load data
+            nmse_results = load_nmse_results(cloud=cloud,task='compression', kernel=kernel,parameter=parameter)
+
+            fig = go.Figure()
+
+            for laplacian in selected_laplacians:
+
+                if laplacian not in nmse_results:
+                    continue
+
+                atom_dict = nmse_results[laplacian][scale]
+
+                Ks = sorted(atom_dict.keys())
+
+                means = []
+                ci = []
+
+                for K in Ks:
+
+                    vals = np.asarray(atom_dict[K])
+
+                    mean = np.mean(vals)
+                    means.append(mean)
+
+                    n = len(vals)
+
+                    if n > 1:
+
+                        std = np.std(vals, ddof=1)
+
+                        t_value = t.ppf(0.975,df=n - 1)
+                        confidence_interval = (t_value * std / np.sqrt(n))
+
+                    else:
+                        confidence_interval = 0
+
+                    ci.append(confidence_interval)
+
+                means = np.asarray(means)
+                ci = np.asarray(ci)
+
+                # Main curve
+                fig.add_trace(
+                    go.Scatter(
+                        x=Ks,
+                        y=means,
+                        mode='lines+markers',
+                        name=laplacian
+                    )
+                )
+
+                # Confidence interval
+                fig.add_trace(
+                    go.Scatter(
+                        x=Ks + Ks[::-1],
+                        y=list(means + ci)
+                        + list((means - ci)[::-1]),
+                        fill='toself',
+                        fillcolor='rgba(100,100,100,0.12)',
+                        line=dict(
+                            color='rgba(255,255,255,0)'
+                        ),
+                        hoverinfo='skip',
+                        showlegend=False
+                    )
+                )
+
+            fig.update_layout(
+                title=(
+                    'NMSE vs Number of Non-Zero Coefficients'
+                    '<br>'
+                    f'<sup>{cloud} | {kernel} | '
+                    f'{parameter} | {scale} scales</sup>'
+                ),
+
+                xaxis_title='Number of non-zero coefficients',
+                yaxis_title='NMSE',
+
+                yaxis_type='log',
+
+                template='plotly_white',
+
+                hovermode='x unified',
+
+                width=850,
+                height=600
+            )
+
+            fig.show()
+
+    # Update plot whenever a widget changes
+    cloud_widget.observe(update_plot, names='value')
+    parameter_widget.observe(update_plot, names='value')
+    kernel_widget.observe(update_plot, names='value')
+    scale_widget.observe(update_plot, names='value')
+
+    for widget in laplacian_widgets.values():
+        widget.observe(update_plot, names='value')
+
+    # Layout
+    controls = widgets.VBox([
+
+        widgets.HBox([cloud_widget, kernel_widget]),
+        widgets.HBox([parameter_widget, scale_widget]),
+
+        widgets.HTML('<b>Laplacians:</b>'),
+
+        widgets.HBox([
+            widgets.VBox([laplacian_widgets['Connection'],laplacian_widgets['Connection Normalized'],laplacian_widgets['Trivial']]),
+            widgets.VBox([laplacian_widgets['Trivial Normalized'],laplacian_widgets['Sheaf']])
+        ])
+    ])
+
+    display(controls)
+    display(output)
+
+    update_plot()
+
+# INTERACTIVE DENOISING PLOT
+def interactive_denoising_plot():
+
+    # Widgets
+    cloud_widget = widgets.Dropdown(options=clouds, value=clouds[0],description='Dataset:')
+    parameter_widget = widgets.Dropdown(options=parameters[clouds[0]],value=parameters[clouds[0]][0],description='Parameter:')
+    kernel_widget = widgets.Dropdown(options=kernels, value=kernels[0], description='Kernel:')
+
+    # Cube is the initial dataset, so start with 2–7
+    scale_widget = widgets.Dropdown(options=list(range(2, 8)), value=3, description='Scales:')
+    atom_widget = widgets.Dropdown(options=[5, 10, 25, 50, 100, 200], value=50, description='Atoms:')
+
+    laplacian_widgets = {lap: widgets.Checkbox(value=(lap != 'Sheaf'),description=lap,indent=False) for lap in laplacians}
+
+    # Update parameters and scales when dataset changes
+
+    def update_parameters(change):
+
+        new_cloud = change['new']
+
+        # Update parameter choices
+        parameter_widget.options = parameters[new_cloud]
+        parameter_widget.value = parameters[new_cloud][0]
+
+        # Update scale choices
+        if new_cloud in ['cube', 'sphere']:
+            scale_widget.options = list(range(2, 8))   # 2–7
+        else:
+            scale_widget.options = list(range(2, 10))  # 2–9
+
+        # Make sure current scale is valid
+        if scale_widget.value not in scale_widget.options:
+            scale_widget.value = scale_widget.options[0]
+
+    cloud_widget.observe(update_parameters, names='value')
+
+    # Plot
+    output = widgets.Output()
+
+    def update_plot(*args):
+
+        with output:
+
+            output.clear_output(wait=True)
+
+            cloud = cloud_widget.value
+            parameter = parameter_widget.value
+            kernel = kernel_widget.value
+            scale = scale_widget.value
+            num_atoms = atom_widget.value
+
+            selected_laplacians = [
+                lap for lap, widget in laplacian_widgets.items()
+                if widget.value
+            ]
+
+            # Load data
+            nmse_results = load_nmse_results(
+                cloud=cloud,
+                task='denoising',
+                kernel=kernel,
+                parameter=parameter
+            )
+
+            fig = go.Figure()
+
+            for laplacian in selected_laplacians:
+
+                if laplacian not in nmse_results:
+                    continue
+
+                snr_dict = nmse_results[laplacian][scale]
+                SNRs = sorted(snr_dict.keys())
+                means = []
+                ci = []
+
+                for snr in SNRs:
+
+                    vals = np.asarray(snr_dict[snr][num_atoms])
+                    mean = np.mean(vals)
+                    means.append(mean)
+                    n = len(vals)
+
+                    if n > 1:
+                        std = np.std(vals, ddof=1)
+                        t_value = t.ppf(0.975,df=n - 1)
+                        confidence_interval = (t_value * std / np.sqrt(n))
+                    else:
+                        confidence_interval = 0
+                    ci.append(confidence_interval)
+
+                means = np.asarray(means)
+                ci = np.asarray(ci)
+
+                # Main curve
+                fig.add_trace(
+                    go.Scatter(
+                        x=SNRs,
+                        y=means,
+                        mode='lines+markers',
+                        name=laplacian
+                    )
+                )
+
+                # Confidence interval
+                fig.add_trace(
+                    go.Scatter(
+                        x=SNRs + SNRs[::-1],
+                        y=list(means + ci)
+                        + list((means - ci)[::-1]),
+                        fill='toself',
+                        fillcolor='rgba(100,100,100,0.12)',
+                        line=dict(
+                            color='rgba(255,255,255,0)'
+                        ),
+                        hoverinfo='skip',
+                        showlegend=False
+                    )
+                )
+
+            fig.update_layout(
+                title=(
+                    'NMSE vs Input SNR'
+                    '<br>'
+                    f'<sup>{cloud} | {kernel} | '
+                    f'{parameter} | '
+                    f'{scale} scales | '
+                    f'{num_atoms} atoms</sup>'
+                ),
+
+                xaxis_title='Input SNR',
+                yaxis_title='NMSE',
+
+                xaxis_type='log',
+                yaxis_type='log',
+
+                template='plotly_white',
+
+                hovermode='x unified',
+
+                width=850,
+                height=600
+            )
+
+            fig.show()
+
+    # Update plot whenever a widget changes
+    cloud_widget.observe(update_plot, names='value')
+    parameter_widget.observe(update_plot, names='value')
+    kernel_widget.observe(update_plot, names='value')
+    scale_widget.observe(update_plot, names='value')
+    atom_widget.observe(update_plot, names='value')
+
+    for widget in laplacian_widgets.values():
+        widget.observe(update_plot, names='value')
+
+    # Layout
+    controls = widgets.VBox([
+
+        widgets.HBox([cloud_widget, kernel_widget]),
+        widgets.HBox([parameter_widget, scale_widget, atom_widget]),
+        widgets.HTML('<b>Laplacians:</b>'),
+        widgets.HBox([
+            widgets.VBox([laplacian_widgets['Connection'], laplacian_widgets['Connection Normalized'],  laplacian_widgets['Trivial']]),
+            widgets.VBox([laplacian_widgets['Trivial Normalized'], laplacian_widgets['Sheaf']])])
+    ])
+
+    display(controls)
+    display(output)
+
+    update_plot()
