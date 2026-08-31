@@ -616,7 +616,6 @@ def plot_nmse_snr(nmse_results, scale=3, num_atoms=50, subtitle='', confidence=T
 
     plt.title(
         f"NMSE vs Input SNR\n"
-        f"Scale = {scale}, Atoms = {num_atoms}\n"
         + subtitle
     )
 
