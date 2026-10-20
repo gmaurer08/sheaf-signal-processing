@@ -2,7 +2,7 @@
 
 This repository contains the code for the sheaf signal processing project for the course *Signal Processing for Machine Learning* (2025/2026) of the Data Science Master's Degree at Sapienza.
 
-A power point presentation of the project is available here: [presentation](Sparse Sheaf Signal Processing.pdf)
+A power point presentation of the project is available here: [presentation](Sparse_Sheaf_Signal_Processing.pdf)
 
 This project explores sparse sheaf signal processing over tangent vector bundles on point clouds in $\mathbb{R}^3$ via wavelet dictionaries. The goal is to compare the performances on signal compression/denoising tasks using wavelet dictionaries built from the connection Laplacian (VDM) and the trivial graph Laplacian.
 
